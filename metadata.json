@@ -1,7 +1,5 @@
 {
-  "name": "Divvi",
-  "description": "A modern, intelligent bill-splitting application for friends and roommates with automated debt minimization and AI-powered expense parsing.",
-  "requestFramePermissions": [
-    "camera"
-  ]
+  "name": "Sinigeng Hatian",
+  "description": "A modern bill-splitting application for friends with direct settlement tracking and direct debt reports.",
+  "requestFramePermissions": []
 }

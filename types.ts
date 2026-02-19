@@ -34,10 +34,3 @@ export interface Settlement {
   toId: string;
   amount: number;
 }
-
-export interface SmartExpenseResult {
-  description: string;
-  amount: number;
-  payerNameHint?: string;
-  date?: string;
-}
