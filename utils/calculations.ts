@@ -28,9 +28,6 @@ export const calculateBalances = (friends: Friend[], expenses: Expense[]): Balan
 
   return friends.map((f) => {
     const { paid, owed } = balancesMap[f.id];
-    // Net: (What others owe me) - (What I owe others)
-    // Note: in our loop, 'paid' accumulates what others owe the payer
-    // and 'owed' accumulates what the friend owes others.
     return {
       friendId: f.id,
       paid,
@@ -40,35 +37,43 @@ export const calculateBalances = (friends: Friend[], expenses: Expense[]): Balan
   });
 };
 
-export const calculateSettlements = (balances: Balance[]): Settlement[] => {
-  const settlements: Settlement[] = [];
-  const nets = balances
-    .map(b => ({ friendId: b.friendId, net: b.net }))
-    .filter(b => Math.abs(b.net) > 0.01);
+/**
+ * Calculates direct settlements between pairs of friends.
+ * This avoids global debt minimization which can be confusing.
+ * It shows exactly who needs to pay whom based on the net difference between them.
+ */
+export const calculateSettlements = (friends: Friend[], expenses: Expense[]): Settlement[] => {
+  // Use a map to track net debt between pairs: 'friendAId-friendBId'
+  // positive value means A owes B, negative means B owes A
+  const pairDebts: Record<string, number> = {};
 
-  let creditors = nets.filter(n => n.net > 0).sort((a, b) => b.net - a.net);
-  let debtors = nets.filter(n => n.net < 0).sort((a, b) => a.net - b.net);
-
-  let cIdx = 0;
-  let dIdx = 0;
-
-  while (cIdx < creditors.length && dIdx < debtors.length) {
-    const creditor = creditors[cIdx];
-    const debtor = debtors[dIdx];
-    const amount = Math.min(creditor.net, Math.abs(debtor.net));
-
-    settlements.push({
-      fromId: debtor.friendId,
-      toId: creditor.friendId,
-      amount: Number(amount.toFixed(2)),
+  expenses.filter(exp => exp.status === 'pending').forEach(exp => {
+    exp.splits.forEach(split => {
+      if (!split.isPaid && split.friendId !== exp.payerId) {
+        // friendId owes payerId
+        const id1 = split.friendId;
+        const id2 = exp.payerId;
+        const key = id1 < id2 ? `${id1}_${id2}` : `${id2}_${id1}`;
+        const direction = id1 < id2 ? 1 : -1;
+        
+        pairDebts[key] = (pairDebts[key] || 0) + (split.amount * direction);
+      }
     });
+  });
 
-    creditor.net -= amount;
-    debtor.net += amount;
+  const settlements: Settlement[] = [];
+  Object.entries(pairDebts).forEach(([key, netDebt]) => {
+    if (Math.abs(netDebt) < 0.01) return;
 
-    if (Math.abs(creditor.net) < 0.01) cIdx++;
-    if (Math.abs(debtor.net) < 0.01) dIdx++;
-  }
+    const [idA, idB] = key.split('_');
+    if (netDebt > 0) {
+      // A owes B
+      settlements.push({ fromId: idA, toId: idB, amount: Number(netDebt.toFixed(2)) });
+    } else {
+      // B owes A
+      settlements.push({ fromId: idB, toId: idA, amount: Number(Math.abs(netDebt).toFixed(2)) });
+    }
+  });
 
   return settlements;
 };

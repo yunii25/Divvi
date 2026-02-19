@@ -3,24 +3,17 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Friend, Expense, Balance, Settlement, ExpenseSplit } from './types';
 import { calculateBalances, calculateSettlements } from './utils/calculations';
 import { parseExpenseWithAI } from './services/geminiService';
+import { db, supabase } from './services/supabaseService';
 import ExpenseForm from './components/ExpenseForm';
 import Modal from './components/Modal';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'summary'>('dashboard');
-  const [friends, setFriends] = useState<Friend[]>(() => {
-    const saved = localStorage.getItem('split_friends');
-    return saved ? JSON.parse(saved) : [
-      { id: '1', name: 'You' },
-      { id: '2', name: 'Alice' },
-      { id: '3', name: 'Bob' }
-    ];
-  });
-
-  const [expenses, setExpenses] = useState<Expense[]>(() => {
-    const saved = localStorage.getItem('split_expenses');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [hasError, setHasError] = useState<string | null>(null);
 
   const [isFriendModalOpen, setIsFriendModalOpen] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
@@ -33,18 +26,30 @@ const App: React.FC = () => {
   const [isParsing, setIsParsing] = useState(false);
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
 
+  // Load initial data from Supabase
   useEffect(() => {
-    localStorage.setItem('split_friends', JSON.stringify(friends));
-  }, [friends]);
-
-  useEffect(() => {
-    localStorage.setItem('split_expenses', JSON.stringify(expenses));
-  }, [expenses]);
+    const fetchData = async () => {
+      try {
+        const [loadedFriends, loadedExpenses] = await Promise.all([
+          db.getFriends(),
+          db.getExpenses()
+        ]);
+        setFriends(loadedFriends);
+        setExpenses(loadedExpenses);
+        setHasError(null);
+      } catch (err: any) {
+        console.error("Failed to load data from Supabase:", err);
+        setHasError(err.message || "Failed to connect to database. Please check your Supabase tables.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
   const balances = useMemo(() => calculateBalances(friends, expenses), [friends, expenses]);
-  const settlements = useMemo(() => calculateSettlements(balances), [balances]);
+  const settlements = useMemo(() => calculateSettlements(friends, expenses), [friends, expenses, balances]);
 
-  // Enhanced Analytics Calculations
   const analytics = useMemo(() => {
     let totalSpend = 0;
     let totalSettledValue = 0;
@@ -60,19 +65,13 @@ const App: React.FC = () => {
     expenses.forEach(e => {
       totalSpend += e.amount;
       friendSpending[e.payerId] = (friendSpending[e.payerId] || 0) + e.amount;
-      
-      // Calculate how much of this specific expense is already "settled"
-      // Payer is always considered "settled" for their own share
       const settledPortion = e.splits.reduce((sum, s) => s.isPaid ? sum + s.amount : sum, 0);
       totalSettledValue += settledPortion;
-      
-      // Track how much each friend has effectively "repaid" or "contributed"
       e.splits.forEach(s => {
         if (s.isPaid) {
           friendSettled[s.friendId] = (friendSettled[s.friendId] || 0) + s.amount;
         }
       });
-
       const dateStr = new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       dailySpending[dateStr] = (dailySpending[dateStr] || 0) + e.amount;
     });
@@ -83,77 +82,128 @@ const App: React.FC = () => {
     const totalPending = totalSpend - totalSettledValue;
     const settlementProgress = totalSpend > 0 ? (totalSettledValue / totalSpend) * 100 : 0;
 
-    return {
-      totalSpend,
-      totalSettledValue,
-      totalPending,
-      settlementProgress,
-      avgExpense: expenses.length ? totalSpend / expenses.length : 0,
-      friendSpending,
-      friendSettled,
-      dailySpending,
-      sortedDates,
-      maxFriendSpend,
-      maxDailySpend
-    };
+    return { totalSpend, totalSettledValue, totalPending, settlementProgress, avgExpense: expenses.length ? totalSpend / expenses.length : 0, friendSpending, friendSettled, dailySpending, sortedDates, maxFriendSpend, maxDailySpend };
   }, [friends, expenses]);
 
-  const addFriend = (e: React.FormEvent) => {
+  const addFriend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newFriendName.trim()) return;
-    const newFriend: Friend = { id: crypto.randomUUID(), name: newFriendName.trim() };
-    setFriends([...friends, newFriend]);
-    setNewFriendName('');
+    setIsSyncing(true);
+    try {
+      const addedFriend = await db.addFriend(newFriendName.trim());
+      setFriends([...friends, addedFriend]);
+      setNewFriendName('');
+    } catch (err) {
+      alert("Error adding friend. Ensure your Supabase 'friends' table exists.");
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
-  const updateFriendName = (id: string, name: string) => {
-    setFriends(friends.map(f => f.id === id ? { ...f, name } : f));
-    setEditingFriendId(null);
+  const updateFriendName = async (id: string, name: string) => {
+    if (!name.trim()) return setEditingFriendId(null);
+    setIsSyncing(true);
+    try {
+      await db.updateFriend(id, name.trim());
+      setFriends(friends.map(f => f.id === id ? { ...f, name: name.trim() } : f));
+      setEditingFriendId(null);
+    } catch (err) {
+      alert("Error updating friend.");
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
-  const deleteFriend = (id: string) => {
-    if (expenses.some(e => e.payerId === id || e.splits.some(s => s.friendId === id))) {
+  const deleteFriend = async (id: string) => {
+    const hasActiveExpenses = expenses.some(e => e.payerId === id || e.splits.some(s => s.friendId === id && s.amount > 0));
+    if (hasActiveExpenses) {
       alert("Cannot delete friend with existing expenses.");
       return;
     }
-    setFriends(friends.filter(f => f.id !== id));
-  };
-
-  const handleExpenseSubmit = (expenseData: Partial<Expense>) => {
-    if (editingExpense) {
-      setExpenses(expenses.map(e => e.id === editingExpense.id ? { ...e, ...expenseData } as Expense : e));
-    } else {
-      const newExp: Expense = {
-        ...expenseData,
-        id: crypto.randomUUID(),
-        status: expenseData.status || 'pending',
-      } as Expense;
-      setExpenses([newExp, ...expenses]);
+    if (!confirm("Remove this friend?")) return;
+    
+    setIsSyncing(true);
+    try {
+      await db.deleteFriend(id);
+      setFriends(friends.filter(f => f.id !== id));
+    } catch (err) {
+      alert("Error deleting friend.");
+    } finally {
+      setIsSyncing(false);
     }
-    setIsExpenseModalOpen(false);
-    setEditingExpense(undefined);
   };
 
-  const toggleExpenseStatus = (id: string) => {
-    setExpenses(expenses.map(e => {
-      if (e.id === id) {
-        const newStatus = e.status === 'pending' ? 'settled' : 'pending';
-        const newSplits = e.splits.map(s => ({ ...s, isPaid: newStatus === 'settled' }));
-        return { ...e, status: newStatus, splits: newSplits };
+  const handleExpenseSubmit = async (expenseData: Partial<Expense>) => {
+    setIsSyncing(true);
+    try {
+      if (editingExpense && editingExpense.id !== 'new') {
+        await db.updateExpense(editingExpense.id, expenseData);
+        setExpenses(expenses.map(e => e.id === editingExpense.id ? { ...e, ...expenseData } as Expense : e));
+      } else {
+        const newExp = await db.addExpense({
+          ...expenseData,
+          status: expenseData.status || 'pending',
+          date: expenseData.date || new Date().toISOString(),
+        } as Omit<Expense, 'id'>);
+        setExpenses([newExp, ...expenses]);
       }
-      return e;
-    }));
+      setIsExpenseModalOpen(false);
+      setEditingExpense(undefined);
+    } catch (err) {
+      console.error(err);
+      alert("Error saving expense. Ensure your Supabase 'expenses' table exists with the correct schema.");
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
-  const toggleIndividualSplit = (expenseId: string, friendId: string) => {
-    setExpenses(expenses.map(e => {
-      if (e.id === expenseId) {
-        const newSplits = e.splits.map(s => s.friendId === friendId ? { ...s, isPaid: !s.isPaid } : s);
-        const allSettled = newSplits.filter(s => s.amount > 0).every(s => s.isPaid);
-        return { ...e, splits: newSplits, status: allSettled ? 'settled' : 'pending' } as Expense;
+  const toggleExpenseStatus = async (id: string) => {
+    const expense = expenses.find(e => e.id === id);
+    if (!expense) return;
+    const newStatus = expense.status === 'pending' ? 'settled' : 'pending';
+    const newSplits = expense.splits.map(s => ({ ...s, isPaid: newStatus === 'settled' }));
+    
+    setIsSyncing(true);
+    try {
+      await db.updateExpense(id, { status: newStatus, splits: newSplits });
+      setExpenses(expenses.map(e => e.id === id ? { ...e, status: newStatus, splits: newSplits } : e));
+    } catch (err) {
+      alert("Sync failed.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const toggleIndividualSplit = async (expenseId: string, friendId: string) => {
+    const exp = expenses.find(e => e.id === expenseId);
+    if (!exp) return;
+    const newSplits = exp.splits.map(s => s.friendId === friendId ? { ...s, isPaid: !s.isPaid } : s);
+    const allSettled = newSplits.filter(s => s.amount > 0).every(s => s.isPaid);
+    const newStatus = allSettled ? 'settled' : 'pending';
+
+    setIsSyncing(true);
+    try {
+      await db.updateExpense(expenseId, { splits: newSplits, status: newStatus });
+      setExpenses(expenses.map(e => e.id === expenseId ? { ...e, splits: newSplits, status: newStatus } as Expense : e));
+    } catch (err) {
+      alert("Update failed.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const deleteExpense = async (id: string) => {
+    if (confirm("Delete this expense?")) {
+      setIsSyncing(true);
+      try {
+        await db.deleteExpense(id);
+        setExpenses(expenses.filter(e => e.id !== id));
+      } catch (err) {
+        alert("Error deleting.");
+      } finally {
+        setIsSyncing(false);
       }
-      return e;
-    }));
+    }
   };
 
   const handleSmartSubmit = async (e: React.FormEvent) => {
@@ -163,7 +213,7 @@ const App: React.FC = () => {
     const parsed = await parseExpenseWithAI(smartInput);
     setIsParsing(false);
     if (parsed) {
-      let payerId = friends[0]?.id;
+      let payerId = friends[0]?.id || 'temporary-id';
       if (parsed.payerNameHint) {
         const found = friends.find(f => f.name.toLowerCase().includes(parsed.payerNameHint!.toLowerCase()));
         if (found) payerId = found.id;
@@ -177,7 +227,7 @@ const App: React.FC = () => {
         date: parsed.date || new Date().toISOString(),
         splitType: 'equal',
         status: 'pending',
-        splits: friends.map(f => ({ friendId: f.id, amount: parsed.amount / friends.length, isPaid: f.id === payerId }))
+        splits: friends.map(f => ({ friendId: f.id, amount: parsed.amount / (friends.length || 1), isPaid: f.id === payerId }))
       });
       setIsSmartModalOpen(false);
       setIsExpenseModalOpen(true);
@@ -187,105 +237,150 @@ const App: React.FC = () => {
     }
   };
 
-  const deleteExpense = (id: string) => {
-    if (confirm("Delete this expense?")) {
-      setExpenses(expenses.filter(e => e.id !== id));
-    }
-  };
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 flex-col space-y-4">
+        <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="font-bold text-gray-500 animate-pulse tracking-widest uppercase text-xs">Connecting to SplitSmart Cloud...</p>
+      </div>
+    );
+  }
 
-  const exportToCSV = () => {
-    const headers = ['Description', 'Payer', 'Total', 'Date', 'Status'];
-    const rows = expenses.map(e => [
-      e.description,
-      friends.find(f => f.id === e.payerId)?.name || 'Unknown',
-      e.amount,
-      new Date(e.date).toLocaleDateString(),
-      e.status
-    ]);
-    const csvContent = [headers, ...rows].map(r => r.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'expenses.csv';
-    link.click();
-  };
+  if (hasError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6 flex-col text-center space-y-6">
+        <div className="w-20 h-20 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center">
+          <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+        </div>
+        <div className="max-w-md space-y-2">
+          <h2 className="text-2xl font-bold text-gray-900">Connection Error</h2>
+          <p className="text-gray-500">{hasError}</p>
+        </div>
+        <button onClick={() => window.location.reload()} className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-bold">Retry Connection</button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen pb-20">
       <nav className="glass sticky top-0 z-40 px-4 py-3 shadow-sm flex items-center justify-between">
         <div className="flex items-center space-x-2">
           <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-lg">S</div>
-          <h1 className="text-xl font-bold text-gray-900 tracking-tight">SplitSmart</h1>
+          <div>
+            <h1 className="text-xl font-bold text-gray-900 tracking-tight">SplitSmart</h1>
+            {isSyncing && <p className="text-[8px] font-bold text-indigo-500 uppercase">Syncing...</p>}
+          </div>
         </div>
         
         <div className="hidden sm:flex bg-gray-100 p-1 rounded-xl">
-          <button 
-            onClick={() => setActiveTab('dashboard')}
-            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${activeTab === 'dashboard' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            Dashboard
-          </button>
-          <button 
-            onClick={() => setActiveTab('summary')}
-            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${activeTab === 'summary' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            Summary
-          </button>
+          <button onClick={() => setActiveTab('dashboard')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${activeTab === 'dashboard' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}>Dashboard</button>
+          <button onClick={() => setActiveTab('summary')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${activeTab === 'summary' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}>Summary</button>
         </div>
 
         <div className="flex items-center space-x-2">
-           <button onClick={() => setIsSmartModalOpen(true)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors" title="Smart Add">
-             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-           </button>
-           <button onClick={() => setIsFriendModalOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-full transition-colors">
-             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13.481 4.017a4 4 0 014.168 5.608" /></svg>
-           </button>
+           <button onClick={() => setIsSmartModalOpen(true)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg></button>
+           <button onClick={() => setIsFriendModalOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-full transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13.481 4.017a4 4 0 014.168 5.608" /></svg></button>
         </div>
       </nav>
 
-      <main className="max-w-4xl mx-auto px-4 mt-8 space-y-8">
+      <main className="max-w-4xl mx-auto px-4 mt-8 space-y-10">
         {activeTab === 'dashboard' ? (
           <>
-            {/* Balances Grid */}
-            <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {balances.map(b => {
-                const friend = friends.find(f => f.id === b.friendId);
-                return (
-                  <div key={b.friendId} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 relative group overflow-hidden">
-                    <div className={`absolute top-0 left-0 w-1 h-full ${b.net >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                    <div className="flex items-center space-x-3 mb-4">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${b.net >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                        {friend?.name[0].toUpperCase()}
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-bold text-gray-900">{friend?.name}</h3>
-                        <p className={`text-xs font-semibold ${b.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                          {b.net >= 0 ? `+ ₱${b.net.toFixed(2)}` : `- ₱${Math.abs(b.net).toFixed(2)}`}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex justify-between text-[10px] uppercase tracking-wider text-gray-400 font-bold border-t pt-3">
-                      <div>Credit: <span className="text-gray-700 ml-1">₱{b.paid.toFixed(2)}</span></div>
-                      <div>Debt: <span className="text-gray-700 ml-1">₱{b.owed.toFixed(2)}</span></div>
-                    </div>
+            <section className="space-y-4">
+              <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Balances</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {friends.length === 0 && (
+                  <div className="col-span-full py-12 text-center bg-white rounded-3xl border border-dashed border-gray-300">
+                    <p className="text-gray-500 font-medium">Add some friends to get started!</p>
+                    <button onClick={() => setIsFriendModalOpen(true)} className="mt-4 px-6 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-bold">Add Friends</button>
                   </div>
-                );
-              })}
+                )}
+                {balances.map(b => {
+                  const friend = friends.find(f => f.id === b.friendId);
+                  return (
+                    <div key={b.friendId} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 relative group overflow-hidden">
+                      <div className={`absolute top-0 left-0 w-1 h-full ${b.net >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                      <div className="flex items-center space-x-3 mb-4">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${b.net >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{friend?.name?.[0].toUpperCase() || '?'}</div>
+                        <div className="flex-1">
+                          <h3 className="font-bold text-gray-900">{friend?.name}</h3>
+                          <p className={`text-xs font-semibold ${b.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{b.net >= 0 ? `+ ₱${b.net.toFixed(2)}` : `- ₱${Math.abs(b.net).toFixed(2)}`}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 border-t pt-3">
+                        <div className="text-center border-r border-gray-50">
+                          <p className="text-[8px] uppercase tracking-widest font-black text-gray-400">Credit</p>
+                          <p className="text-xs font-bold text-emerald-600">₱{b.paid.toFixed(2)}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-[8px] uppercase tracking-widest font-black text-gray-400">Debt</p>
+                          <p className="text-xs font-bold text-rose-600">₱{b.owed.toFixed(2)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </section>
 
-            {/* Expenses List */}
+            {settlements.length > 0 && (
+              <section className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-500">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest flex items-center space-x-2">
+                    <svg className="w-4 h-4 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" /></svg>
+                    <span>Settlement Report</span>
+                  </h2>
+                  <span className="text-[10px] font-bold bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full uppercase">Direct Transfers</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {settlements.map((s, idx) => {
+                    const fromFriend = friends.find(f => f.id === s.fromId);
+                    const toFriend = friends.find(f => f.id === s.toId);
+                    return (
+                      <div key={idx} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between group hover:border-indigo-200 transition-colors">
+                        <div className="flex items-center space-x-3">
+                          <div className="text-center">
+                            <div className="w-8 h-8 rounded-full bg-rose-50 flex items-center justify-center text-xs font-bold text-rose-600">{fromFriend?.name?.[0]}</div>
+                            <p className="text-[9px] font-bold text-gray-400 uppercase mt-1 truncate w-12">{fromFriend?.name}</p>
+                          </div>
+                          <div className="flex flex-col items-center">
+                            <svg className="w-5 h-5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+                            <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">Pays</span>
+                          </div>
+                          <div className="text-center">
+                            <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center text-xs font-bold text-emerald-600">{toFriend?.name?.[0]}</div>
+                            <p className="text-[9px] font-bold text-gray-400 uppercase mt-1 truncate w-12">{toFriend?.name}</p>
+                          </div>
+                        </div>
+                        <div className="text-right pl-4 border-l border-gray-50">
+                          <p className="text-lg font-black text-gray-900 leading-tight">₱{s.amount.toFixed(2)}</p>
+                          <p className="text-[8px] font-bold text-emerald-500 uppercase tracking-widest">Settle Up</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
             <section className="space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-gray-900">Expenses</h2>
-                <div className="flex items-center space-x-2">
-                  <button onClick={exportToCSV} className="p-2 border rounded-xl hover:bg-gray-50 text-gray-600">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  </button>
-                  <button onClick={() => { setEditingExpense(undefined); setIsExpenseModalOpen(true); }} className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-100 flex items-center space-x-2">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
-                    <span>Add Expense</span>
-                  </button>
-                </div>
+                <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Expenses</h2>
+                <button 
+                  onClick={() => { 
+                    if (friends.length === 0) {
+                      alert("Please add friends first!");
+                      setIsFriendModalOpen(true);
+                    } else {
+                      setEditingExpense(undefined); 
+                      setIsExpenseModalOpen(true); 
+                    }
+                  }} 
+                  className="px-4 py-1.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-md shadow-indigo-100 flex items-center space-x-2 text-xs"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                  <span>New Bill</span>
+                </button>
               </div>
 
               <div className="bg-white rounded-3xl shadow-sm border border-gray-100 divide-y divide-gray-50 overflow-hidden">
@@ -296,19 +391,13 @@ const App: React.FC = () => {
                     <div key={exp.id} className={`transition-all ${exp.status === 'settled' ? 'bg-gray-50/50 opacity-60' : 'bg-white'}`}>
                       <div className="p-4 flex items-center justify-between cursor-pointer group" onClick={() => setExpandedExpenseId(expandedExpenseId === exp.id ? null : exp.id)}>
                         <div className="flex items-center space-x-4">
-                          <button onClick={(e) => { e.stopPropagation(); toggleExpenseStatus(exp.id); }} className={`p-2 rounded-xl border transition-all ${exp.status === 'settled' ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-gray-200 text-gray-300 hover:border-emerald-500'}`}>
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
-                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); toggleExpenseStatus(exp.id); }} className={`p-2 rounded-xl border transition-all ${exp.status === 'settled' ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-gray-200 text-gray-300 hover:border-emerald-500'}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg></button>
                           <div>
                             <h4 className={`font-bold transition-all ${exp.status === 'settled' ? 'line-through text-gray-400' : 'text-gray-900'}`}>{exp.description}</h4>
                             <div className="flex items-center space-x-2 text-[10px] text-gray-500">
                               <span className="font-bold text-gray-700 uppercase">{friends.find(f => f.id === exp.payerId)?.name} PAID</span>
                               <span>•</span>
                               <span>{new Date(exp.date).toLocaleDateString()}</span>
-                              <span>•</span>
-                              <span className={`px-1.5 py-0.5 rounded-full font-bold ${exp.status === 'settled' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
-                                {exp.splits.filter(s => s.amount > 0 && s.isPaid).length} / {exp.splits.filter(s => s.amount > 0).length} SETTLED
-                              </span>
                             </div>
                           </div>
                         </div>
@@ -349,249 +438,105 @@ const App: React.FC = () => {
                 )}
               </div>
             </section>
-
-            {/* Settlement Summary */}
-            <section className="bg-indigo-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/20 rounded-full -mr-10 -mt-10 blur-2xl" />
-              <div className="relative z-10">
-                <div className="flex items-center justify-between mb-8">
-                  <h2 className="text-2xl font-bold flex items-center space-x-3">
-                    <svg className="w-7 h-7 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                    <span>Settlement Report</span>
-                  </h2>
-                </div>
-
-                {settlements.length === 0 ? (
-                  <div className="py-8 text-center bg-indigo-800/20 rounded-3xl border border-indigo-700/50">
-                    <p className="text-indigo-300 font-medium">✨ All settled! Everyone is square.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {settlements.map((s, idx) => (
-                      <div key={idx} className="bg-white/5 border border-white/10 p-5 rounded-3xl flex items-center justify-between group transition-all hover:bg-white/10">
-                        <div className="flex items-center space-x-4">
-                          <div className="flex items-center space-x-2">
-                            <span className="font-bold text-indigo-200">{friends.find(f => f.id === s.fromId)?.name}</span>
-                            <svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
-                            <span className="font-bold text-indigo-200">{friends.find(f => f.id === s.toId)?.name}</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-4">
-                           <span className="text-2xl font-bold text-emerald-400 font-mono tracking-tighter">₱{s.amount.toFixed(2)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </section>
           </>
         ) : (
-          /* Summary Tab Content */
           <section className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {/* Top Stat Row */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100 flex flex-col justify-between">
-                <div>
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Total Group Spend</p>
-                  <p className="text-4xl font-bold text-gray-900 tracking-tighter">₱{analytics.totalSpend.toLocaleString()}</p>
-                </div>
-                <div className="mt-4 pt-4 border-t border-gray-50 flex justify-between items-center">
-                  <span className="text-[10px] font-bold text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full">₱{analytics.totalSettledValue.toLocaleString()} SETTLED</span>
-                  <span className="text-[10px] font-bold text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full">₱{analytics.totalPending.toLocaleString()} PENDING</span>
-                </div>
+              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100">
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Total Group Spend</p>
+                <p className="text-4xl font-bold text-gray-900 tracking-tighter">₱{analytics.totalSpend.toLocaleString()}</p>
+                <p className="text-[10px] text-emerald-500 font-bold mt-2">₱{analytics.totalSettledValue.toLocaleString()} SETTLED</p>
               </div>
-              
-              <div className="bg-indigo-600 p-6 rounded-[2rem] shadow-lg shadow-indigo-100 text-white flex flex-col justify-between">
-                <div>
-                  <p className="text-xs font-bold text-indigo-200 uppercase tracking-widest mb-1">Group Progress</p>
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-4xl font-bold tracking-tighter">{analytics.settlementProgress.toFixed(0)}%</p>
-                    <div className="w-12 h-12 rounded-full border-4 border-indigo-400 flex items-center justify-center">
-                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>
-                    </div>
-                  </div>
-                </div>
-                <div className="w-full bg-indigo-800 rounded-full h-2 overflow-hidden">
-                  <div className="bg-white h-full transition-all duration-1000" style={{ width: `${analytics.settlementProgress}%` }} />
-                </div>
+              <div className="bg-indigo-600 p-6 rounded-[2rem] shadow-lg shadow-indigo-100 text-white">
+                <p className="text-xs font-bold text-indigo-200 uppercase tracking-widest mb-1">Settlement Status</p>
+                <p className="text-4xl font-bold tracking-tighter">{analytics.settlementProgress.toFixed(0)}%</p>
+                <div className="w-full bg-indigo-800 rounded-full h-1.5 mt-2 overflow-hidden"><div className="bg-white h-full transition-all duration-1000" style={{ width: `${analytics.settlementProgress}%` }} /></div>
               </div>
-
-              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100 flex flex-col justify-between">
-                <div>
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Avg per Friend</p>
-                  <p className="text-4xl font-bold text-gray-900 tracking-tighter">₱{(analytics.totalSpend / friends.length).toFixed(0)}</p>
-                </div>
-                <p className="text-[10px] text-gray-400 mt-2 font-medium italic">Based on {friends.length} active members</p>
+              <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100">
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Active Friends</p>
+                <p className="text-4xl font-bold text-gray-900 tracking-tighter">{friends.length}</p>
+                <p className="text-[10px] text-gray-400 mt-2 font-medium">Cloud sync active</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Contribution Chart */}
-              <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100">
-                <h3 className="text-lg font-bold text-gray-900 mb-8 flex items-center space-x-2">
-                  <div className="w-1.5 h-6 bg-indigo-500 rounded-full" />
-                  <span>Settled Contributions</span>
-                </h3>
+            <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100 max-w-2xl mx-auto w-full">
+                <h3 className="text-lg font-bold text-gray-900 mb-8 flex items-center space-x-2"><div className="w-1.5 h-6 bg-indigo-500 rounded-full" /><span>Contribution Breakdown</span></h3>
                 <div className="space-y-6">
                   {friends.map(f => {
                     const total = analytics.friendSpending[f.id] || 0;
                     const settled = analytics.friendSettled[f.id] || 0;
                     const barWidth = analytics.maxFriendSpend > 0 ? (total / analytics.maxFriendSpend) * 100 : 0;
                     const settledWidth = total > 0 ? (settled / total) * 100 : 0;
-                    
                     return (
                       <div key={f.id} className="space-y-2 group">
-                        <div className="flex justify-between text-xs font-bold text-gray-700">
-                          <div className="flex items-center space-x-2">
-                            <span className="w-6 h-6 rounded-full bg-indigo-50 flex items-center justify-center text-[10px]">{f.name[0]}</span>
-                            <span>{f.name}</span>
-                          </div>
-                          <span className="text-indigo-600">₱{settled.toFixed(2)} / ₱{total.toFixed(2)}</span>
-                        </div>
+                        <div className="flex justify-between text-xs font-bold text-gray-700"><span>{f.name}</span><span className="text-indigo-600">₱{settled.toFixed(2)} / ₱{total.toFixed(2)}</span></div>
                         <div className="h-4 bg-gray-50 rounded-full overflow-hidden relative">
-                          <div 
-                            className="h-full bg-indigo-100 absolute left-0 top-0 transition-all duration-1000"
-                            style={{ width: `${barWidth}%` }}
-                          />
-                          <div 
-                            className="h-full bg-indigo-600 absolute left-0 top-0 transition-all duration-1000 z-10"
-                            style={{ width: `${(settledWidth * barWidth) / 100}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                          <span className="text-[10px] font-bold text-gray-400 uppercase">{settledWidth.toFixed(0)}% Repaid/Owned Clear</span>
+                          <div className="h-full bg-indigo-100 absolute left-0 top-0 transition-all duration-1000" style={{ width: `${barWidth}%` }} />
+                          <div className="h-full bg-indigo-600 absolute left-0 top-0 transition-all duration-1000 z-10" style={{ width: `${(settledWidth * barWidth) / 100}%` }} />
                         </div>
                       </div>
                     );
                   })}
                 </div>
-              </div>
-
-              {/* Activity Timeline */}
-              <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100">
-                <h3 className="text-lg font-bold text-gray-900 mb-8 flex items-center space-x-2">
-                  <div className="w-1.5 h-6 bg-emerald-500 rounded-full" />
-                  <span>Spending Timeline</span>
-                </h3>
-                <div className="h-48 flex items-end justify-between space-x-2">
-                  {analytics.sortedDates.slice(-7).map(date => {
-                    const amount = analytics.dailySpending[date];
-                    const barHeight = (amount / analytics.maxDailySpend) * 100;
-                    return (
-                      <div key={date} className="flex-1 flex flex-col items-center space-y-2 group relative">
-                        <div className="absolute -top-10 opacity-0 group-hover:opacity-100 bg-gray-900 text-white text-[10px] px-2 py-1 rounded pointer-events-none transition-opacity whitespace-nowrap z-20">
-                          ₱{amount.toFixed(2)}
-                        </div>
-                        <div 
-                          className="w-full bg-emerald-100 hover:bg-emerald-500 rounded-t-lg transition-all duration-700 cursor-help"
-                          style={{ height: `${barHeight}%` }}
-                        />
-                        <span className="text-[8px] font-bold text-gray-400 uppercase truncate w-full text-center">
-                          {date}
-                        </span>
-                      </div>
-                    );
-                  })}
-                  {analytics.sortedDates.length === 0 && (
-                    <div className="w-full h-full flex items-center justify-center text-gray-300 italic text-sm">
-                      No activity logs found
-                    </div>
-                  )}
-                </div>
-                <div className="mt-6 flex justify-center space-x-4">
-                  <div className="flex items-center space-x-1.5">
-                    <div className="w-2.5 h-2.5 bg-emerald-500 rounded-sm" />
-                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Spending</span>
-                  </div>
-                  <div className="flex items-center space-x-1.5">
-                    <div className="w-2.5 h-2.5 bg-emerald-100 rounded-sm" />
-                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Normal</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-gray-50 p-8 rounded-[2.5rem] border border-gray-100">
-              <h3 className="text-gray-900 font-bold mb-6 flex items-center justify-between">
-                <span>Contribution Leaderboard</span>
-                <span className="text-xs font-normal text-gray-500">Syncs with settlements</span>
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {Object.entries(analytics.friendSpending)
-                  .sort(([,a], [,b]) => b - a)
-                  .map(([fid, amt], idx) => {
-                    const f = friends.find(fr => fr.id === fid);
-                    const settled = analytics.friendSettled[fid] || 0;
-                    return (
-                      <div key={fid} className="flex items-center justify-between p-5 bg-white rounded-3xl border border-gray-100 shadow-sm transition-transform hover:-translate-y-1">
-                        <div className="flex items-center space-x-4">
-                          <span className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${idx === 0 ? 'bg-amber-100 text-amber-600' : 'bg-gray-100 text-gray-500'}`}>
-                            {idx + 1}
-                          </span>
-                          <div>
-                            <p className="font-bold text-gray-800">{f?.name}</p>
-                            <p className="text-[10px] text-emerald-500 font-bold uppercase tracking-wider">₱{settled.toFixed(2)} Settled</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-lg font-bold text-indigo-600">₱{amt.toFixed(0)}</span>
-                          <p className="text-[9px] text-gray-400 font-bold uppercase">Total Share</p>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
             </div>
           </section>
         )}
       </main>
 
-      {/* Footer Nav for Mobile */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 glass px-6 py-3 rounded-2xl shadow-xl flex items-center space-x-8 z-50">
-          <button 
-            onClick={() => setActiveTab('dashboard')} 
-            className={`transition-colors p-2 rounded-xl ${activeTab === 'dashboard' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400 hover:text-indigo-400'}`}
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
-          </button>
-          
-          <button onClick={() => setIsExpenseModalOpen(true)} className="w-14 h-14 bg-indigo-600 text-white rounded-full flex items-center justify-center shadow-xl -mt-12 hover:scale-110 active:scale-95 transition-all">
-            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M12 4v16m8-8H4"/></svg>
-          </button>
-          
-          <button 
-            onClick={() => setActiveTab('summary')} 
-            className={`transition-colors p-2 rounded-xl ${activeTab === 'summary' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400 hover:text-indigo-400'}`}
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-          </button>
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 glass px-6 py-3 rounded-2xl shadow-xl flex items-center space-x-8 z-50 border border-white/50">
+          <button onClick={() => setActiveTab('dashboard')} className={`transition-colors p-2 rounded-xl ${activeTab === 'dashboard' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400 hover:text-indigo-400'}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg></button>
+          <button onClick={() => setIsExpenseModalOpen(true)} className="w-14 h-14 bg-indigo-600 text-white rounded-full flex items-center justify-center shadow-xl -mt-12 hover:scale-110 active:scale-95 transition-all"><svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M12 4v16m8-8H4"/></svg></button>
+          <button onClick={() => setActiveTab('summary')} className={`transition-colors p-2 rounded-xl ${activeTab === 'summary' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400 hover:text-indigo-400'}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg></button>
       </div>
 
-      {/* Modals */}
-      <Modal isOpen={isFriendModalOpen} onClose={() => setIsFriendModalOpen(false)} title="Manage Friends">
+      <Modal isOpen={isFriendModalOpen} onClose={() => { setIsFriendModalOpen(false); setEditingFriendId(null); }} title="Friends List">
         <div className="space-y-6 text-gray-900">
           <form onSubmit={addFriend} className="flex space-x-2">
-            <input type="text" value={newFriendName} onChange={e => setNewFriendName(e.target.value)} placeholder="New friend's name" className="flex-1 rounded-xl border-gray-200 border p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-900 placeholder-gray-400"/>
-            <button type="submit" className="px-6 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700">Add</button>
+            <input type="text" value={newFriendName} onChange={e => setNewFriendName(e.target.value)} placeholder="Name" className="flex-1 rounded-xl border-gray-200 border p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-900" />
+            <button type="submit" disabled={isSyncing} className="px-6 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 disabled:opacity-50">Add</button>
           </form>
           <div className="space-y-3">
+            {friends.length === 0 && <p className="text-center py-4 text-gray-400 text-sm">No friends added yet.</p>}
             {friends.map(f => (
               <div key={f.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100 group">
                 {editingFriendId === f.id ? (
                   <div className="flex-1 flex items-center space-x-2">
-                    <input autoFocus value={friendNameBuffer} onChange={e => setFriendNameBuffer(e.target.value)} onKeyDown={e => e.key === 'Enter' && updateFriendName(f.id, friendNameBuffer)} className="flex-1 p-1.5 text-sm border-2 border-indigo-500 rounded-lg outline-none bg-white text-gray-900"/>
-                    <button onClick={() => updateFriendName(f.id, friendNameBuffer)} className="bg-indigo-600 text-white p-2 rounded-lg"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg></button>
+                    <input 
+                      autoFocus
+                      type="text" 
+                      value={friendNameBuffer} 
+                      onChange={e => setFriendNameBuffer(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && updateFriendName(f.id, friendNameBuffer)}
+                      className="flex-1 bg-white border border-indigo-200 rounded-lg px-2 py-1 text-sm font-bold text-gray-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                    <button onClick={() => updateFriendName(f.id, friendNameBuffer)} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>
+                    </button>
+                    <button onClick={() => setEditingFriendId(null)} className="p-2 text-gray-400 hover:bg-gray-200 rounded-lg">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
                   </div>
                 ) : (
                   <>
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center font-bold text-gray-500 text-xs">{f.name[0]}</div>
-                      <span className="font-bold text-gray-800">{f.name}</span>
-                    </div>
-                    <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                       <button onClick={() => { setEditingFriendId(f.id); setFriendNameBuffer(f.name); }} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg></button>
-                       <button onClick={() => deleteFriend(f.id)} className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
+                    <span className="font-bold text-gray-800">{f.name}</span>
+                    <div className="flex space-x-1">
+                      <button 
+                        onClick={() => {
+                          setEditingFriendId(f.id);
+                          setFriendNameBuffer(f.name);
+                        }} 
+                        className="p-2 text-indigo-600 hover:bg-indigo-100 rounded-lg"
+                        title="Edit name"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                      </button>
+                      <button 
+                        onClick={() => deleteFriend(f.id)} 
+                        className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg"
+                        title="Delete friend"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                      </button>
                     </div>
                   </>
                 )}
@@ -601,15 +546,15 @@ const App: React.FC = () => {
         </div>
       </Modal>
 
-      <Modal isOpen={isExpenseModalOpen} onClose={() => { setIsExpenseModalOpen(false); setEditingExpense(undefined); }} title={editingExpense ? "Edit Bill" : "Add New Bill"}>
+      <Modal isOpen={isExpenseModalOpen} onClose={() => { setIsExpenseModalOpen(false); setEditingExpense(undefined); }} title={editingExpense ? (editingExpense.id === 'new' ? "New Bill Preview" : "Edit Bill") : "New Bill"}>
         <ExpenseForm friends={friends} expense={editingExpense} onSubmit={handleExpenseSubmit} onCancel={() => setIsExpenseModalOpen(false)}/>
       </Modal>
 
-      <Modal isOpen={isSmartModalOpen} onClose={() => setIsSmartModalOpen(false)} title="Magic Expense Parser">
+      <Modal isOpen={isSmartModalOpen} onClose={() => setIsSmartModalOpen(false)} title="AI Parser">
         <form onSubmit={handleSmartSubmit} className="space-y-4 text-gray-900">
-          <textarea value={smartInput} onChange={e => setSmartInput(e.target.value)} className="w-full h-32 p-4 border rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-900 placeholder-gray-400" placeholder="Try: 'Paid 120 for Dinner with Alice and Bob yesterday'"/>
+          <textarea value={smartInput} onChange={e => setSmartInput(e.target.value)} className="w-full h-32 p-4 border rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-900 placeholder-gray-400" placeholder="e.g., 'Paid 1500 for dinner with Alice and Bob yesterday'"/>
           <button disabled={isParsing || !smartInput.trim()} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold flex items-center justify-center space-x-2 disabled:opacity-50">
-            {isParsing ? <span>Analyzing...</span> : <span>Parse Magic</span>}
+            {isParsing ? <span>Parsing...</span> : <span>Process Expense</span>}
           </button>
         </form>
       </Modal>
