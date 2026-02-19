@@ -267,7 +267,7 @@ const App: React.FC = () => {
         <div className="flex items-center space-x-2">
           <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-lg">S</div>
           <div>
-            <h1 className="text-xl font-bold text-gray-900 tracking-tight">SplitSmart</h1>
+            <h1 className="text-xl font-bold text-gray-900 tracking-tight">Sinigeng Hatian</h1>
             {isSyncing && <p className="text-[8px] font-bold text-indigo-500 uppercase">Syncing...</p>}
           </div>
         </div>
@@ -278,7 +278,7 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-2">
-           <button onClick={() => setIsSmartModalOpen(true)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg></button>
+           <button onClick={() => setIsSmartModalOpen(true)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors hidden"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg></button>
            <button onClick={() => setIsFriendModalOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-full transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13.481 4.017a4 4 0 014.168 5.608" /></svg></button>
         </div>
       </nav>
