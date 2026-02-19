@@ -1,9 +1,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Friend, Expense, Balance, Settlement, ExpenseSplit } from './types';
+import { Friend, Expense, Balance, Settlement } from './types';
 import { calculateBalances, calculateSettlements } from './utils/calculations';
-import { parseExpenseWithAI } from './services/geminiService';
-import { db, supabase } from './services/supabaseService';
+import { db } from './services/supabaseService';
 import ExpenseForm from './components/ExpenseForm';
 import Modal from './components/Modal';
 
@@ -17,13 +16,10 @@ const App: React.FC = () => {
 
   const [isFriendModalOpen, setIsFriendModalOpen] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
-  const [isSmartModalOpen, setIsSmartModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | undefined>(undefined);
   const [editingFriendId, setEditingFriendId] = useState<string | null>(null);
   const [friendNameBuffer, setFriendNameBuffer] = useState('');
   const [newFriendName, setNewFriendName] = useState('');
-  const [smartInput, setSmartInput] = useState('');
-  const [isParsing, setIsParsing] = useState(false);
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
 
   // Load initial data from Supabase
@@ -48,14 +44,13 @@ const App: React.FC = () => {
   }, []);
 
   const balances = useMemo(() => calculateBalances(friends, expenses), [friends, expenses]);
-  const settlements = useMemo(() => calculateSettlements(friends, expenses), [friends, expenses, balances]);
+  const settlements = useMemo(() => calculateSettlements(friends, expenses), [friends, expenses]);
 
   const analytics = useMemo(() => {
     let totalSpend = 0;
     let totalSettledValue = 0;
     const friendSpending: Record<string, number> = {};
     const friendSettled: Record<string, number> = {};
-    const dailySpending: Record<string, number> = {};
 
     friends.forEach(f => {
       friendSpending[f.id] = 0;
@@ -72,17 +67,12 @@ const App: React.FC = () => {
           friendSettled[s.friendId] = (friendSettled[s.friendId] || 0) + s.amount;
         }
       });
-      const dateStr = new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      dailySpending[dateStr] = (dailySpending[dateStr] || 0) + e.amount;
     });
 
-    const sortedDates = Object.keys(dailySpending).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
     const maxFriendSpend = Math.max(...Object.values(friendSpending), 1);
-    const maxDailySpend = Math.max(...Object.values(dailySpending), 1);
-    const totalPending = totalSpend - totalSettledValue;
     const settlementProgress = totalSpend > 0 ? (totalSettledValue / totalSpend) * 100 : 0;
 
-    return { totalSpend, totalSettledValue, totalPending, settlementProgress, avgExpense: expenses.length ? totalSpend / expenses.length : 0, friendSpending, friendSettled, dailySpending, sortedDates, maxFriendSpend, maxDailySpend };
+    return { totalSpend, totalSettledValue, settlementProgress, friendSpending, friendSettled, maxFriendSpend };
   }, [friends, expenses]);
 
   const addFriend = async (e: React.FormEvent) => {
@@ -94,7 +84,7 @@ const App: React.FC = () => {
       setFriends([...friends, addedFriend]);
       setNewFriendName('');
     } catch (err) {
-      alert("Error adding friend. Ensure your Supabase 'friends' table exists.");
+      alert("Error adding friend.");
     } finally {
       setIsSyncing(false);
     }
@@ -150,8 +140,7 @@ const App: React.FC = () => {
       setIsExpenseModalOpen(false);
       setEditingExpense(undefined);
     } catch (err) {
-      console.error(err);
-      alert("Error saving expense. Ensure your Supabase 'expenses' table exists with the correct schema.");
+      alert("Error saving expense.");
     } finally {
       setIsSyncing(false);
     }
@@ -206,42 +195,11 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSmartSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!smartInput.trim()) return;
-    setIsParsing(true);
-    const parsed = await parseExpenseWithAI(smartInput);
-    setIsParsing(false);
-    if (parsed) {
-      let payerId = friends[0]?.id || 'temporary-id';
-      if (parsed.payerNameHint) {
-        const found = friends.find(f => f.name.toLowerCase().includes(parsed.payerNameHint!.toLowerCase()));
-        if (found) payerId = found.id;
-      }
-      
-      setEditingExpense({
-        id: 'new',
-        description: parsed.description,
-        amount: parsed.amount,
-        payerId: payerId,
-        date: parsed.date || new Date().toISOString(),
-        splitType: 'equal',
-        status: 'pending',
-        splits: friends.map(f => ({ friendId: f.id, amount: parsed.amount / (friends.length || 1), isPaid: f.id === payerId }))
-      });
-      setIsSmartModalOpen(false);
-      setIsExpenseModalOpen(true);
-      setSmartInput('');
-    } else {
-      alert("AI could not understand that. Try being more descriptive.");
-    }
-  };
-
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 flex-col space-y-4">
         <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="font-bold text-gray-500 animate-pulse tracking-widest uppercase text-xs">Connecting to SplitSmart Cloud...</p>
+        <p className="font-bold text-gray-500 animate-pulse tracking-widest uppercase text-xs">Connecting to Cloud...</p>
       </div>
     );
   }
@@ -278,7 +236,6 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-2">
-           <button onClick={() => setIsSmartModalOpen(true)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors hidden"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg></button>
            <button onClick={() => setIsFriendModalOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-full transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13.481 4.017a4 4 0 014.168 5.608" /></svg></button>
         </div>
       </nav>
@@ -548,15 +505,6 @@ const App: React.FC = () => {
 
       <Modal isOpen={isExpenseModalOpen} onClose={() => { setIsExpenseModalOpen(false); setEditingExpense(undefined); }} title={editingExpense ? (editingExpense.id === 'new' ? "New Bill Preview" : "Edit Bill") : "New Bill"}>
         <ExpenseForm friends={friends} expense={editingExpense} onSubmit={handleExpenseSubmit} onCancel={() => setIsExpenseModalOpen(false)}/>
-      </Modal>
-
-      <Modal isOpen={isSmartModalOpen} onClose={() => setIsSmartModalOpen(false)} title="AI Parser">
-        <form onSubmit={handleSmartSubmit} className="space-y-4 text-gray-900">
-          <textarea value={smartInput} onChange={e => setSmartInput(e.target.value)} className="w-full h-32 p-4 border rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-900 placeholder-gray-400" placeholder="e.g., 'Paid 1500 for dinner with Alice and Bob yesterday'"/>
-          <button disabled={isParsing || !smartInput.trim()} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold flex items-center justify-center space-x-2 disabled:opacity-50">
-            {isParsing ? <span>Parsing...</span> : <span>Process Expense</span>}
-          </button>
-        </form>
       </Modal>
     </div>
   );
