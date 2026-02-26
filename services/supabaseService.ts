@@ -68,7 +68,7 @@ export const db = {
     const { data, error } = await supabase.from('friends').select('*').order('created_at', { ascending: true });
     if (error) {
       console.error("Supabase Error (getFriends):", error);
-      return [];
+      throw new Error(`Failed to load friends: ${error.message}`);
     }
     return data || [];
   },
@@ -94,7 +94,7 @@ export const db = {
     const { data, error } = await supabase.from('expenses').select('*').order('date', { ascending: false });
     if (error) {
       console.error("Supabase Error (getExpenses):", error);
-      return [];
+      throw new Error(`Failed to load expenses: ${error.message}`);
     }
     return (data || []).map(mapExpenseFromDB);
   },

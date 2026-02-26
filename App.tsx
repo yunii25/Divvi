@@ -284,6 +284,12 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-2">
+           {user && (
+             <div className="hidden md:flex flex-col items-end mr-2">
+               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Logged in as</span>
+               <span className="text-xs font-bold text-indigo-600 truncate max-w-[150px]">{user.email}</span>
+             </div>
+           )}
            <button onClick={() => setIsFriendModalOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-full transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13.481 4.017a4 4 0 014.168 5.608" /></svg></button>
            <button onClick={handleLogout} className="p-2 text-rose-600 hover:bg-rose-50 rounded-full transition-colors" title="Logout"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4-4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg></button>
         </div>
