@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Check, Info } from 'lucide-react';
 import { Friend, Expense, ExpenseSplit } from '../types';
-import { cn } from '../utils/cn';
 
 interface ExpenseFormProps {
   friends: Friend[];
@@ -13,13 +11,13 @@ interface ExpenseFormProps {
 const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, onCancel }) => {
   const [description, setDescription] = useState(expense?.description || '');
   const [amount, setAmount] = useState(expense?.amount?.toString() || '');
-  const [payerId, setPayerId] = useState(expense?.payerId || (friends[0]?.id || ''));
+  const [payerId, setPayerId] = useState<string | number>(expense?.payerId || (friends[0]?.id || ''));
   const [splitType, setSplitType] = useState<'equal' | 'custom'>(expense?.splitType || 'equal');
   const [status, setStatus] = useState<'pending' | 'settled'>(expense?.status || 'pending');
   
-  const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
-  const [paidFriendIds, setPaidFriendIds] = useState<string[]>([]);
-  const [customSplits, setCustomSplits] = useState<Record<string, string>>({});
+  const [selectedFriendIds, setSelectedFriendIds] = useState<(string | number)[]>([]);
+  const [paidFriendIds, setPaidFriendIds] = useState<(string | number)[]>([]);
+  const [customSplits, setCustomSplits] = useState<Record<string | number, string>>({});
 
   useEffect(() => {
     if (expense?.splits) {
@@ -29,7 +27,7 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
       setSelectedFriendIds(activeIds);
       setPaidFriendIds(settledIds);
       
-      const splitsObj: Record<string, string> = {};
+      const splitsObj: Record<string | number, string> = {};
       expense.splits.forEach(s => {
         splitsObj[s.friendId] = s.amount > 0 ? s.amount.toString() : '';
       });
@@ -37,7 +35,7 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
     } else {
       setSelectedFriendIds(friends.map(f => f.id));
       setPaidFriendIds([]); 
-      const defaultSplits: Record<string, string> = {};
+      const defaultSplits: Record<string | number, string> = {};
       friends.forEach(f => {
         defaultSplits[f.id] = '';
       });
@@ -45,15 +43,15 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
     }
   }, [expense, friends]);
 
-  const toggleFriendSelection = (id: string) => {
+  const toggleFriendSelection = (id: string | number) => {
     setSelectedFriendIds(prev => 
-      prev.includes(id) ? prev.filter(fid => fid !== id) : [...prev, id]
+      prev.some(fid => String(fid) === String(id)) ? prev.filter(fid => String(fid) !== String(id)) : [...prev, id]
     );
   };
 
-  const togglePaidStatus = (id: string) => {
+  const togglePaidStatus = (id: string | number) => {
     setPaidFriendIds(prev =>
-      prev.includes(id) ? prev.filter(fid => fid !== id) : [...prev, id]
+      prev.some(fid => String(fid) === String(id)) ? prev.filter(fid => String(fid) !== String(id)) : [...prev, id]
     );
   };
 
@@ -69,8 +67,8 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
       const perPerson = numAmount / selectedFriendIds.length;
       splits = friends.map(f => ({ 
         friendId: f.id, 
-        amount: selectedFriendIds.includes(f.id) ? perPerson : 0,
-        isPaid: f.id === payerId || paidFriendIds.includes(f.id)
+        amount: selectedFriendIds.some(fid => String(fid) === String(f.id)) ? perPerson : 0,
+        isPaid: String(f.id) === String(payerId) || paidFriendIds.some(fid => String(fid) === String(f.id))
       }));
     } else {
       const totalCustom = (Object.values(customSplits) as string[]).reduce((sum: number, val: string) => sum + (parseFloat(val) || 0), 0);
@@ -79,8 +77,8 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
       }
       splits = friends.map(f => ({
         friendId: f.id,
-        amount: selectedFriendIds.includes(f.id) ? (parseFloat(customSplits[f.id]) || 0) : 0,
-        isPaid: f.id === payerId || paidFriendIds.includes(f.id)
+        amount: selectedFriendIds.some(fid => String(fid) === String(f.id)) ? (parseFloat(customSplits[f.id]) || 0) : 0,
+        isPaid: String(f.id) === String(payerId) || paidFriendIds.some(fid => String(fid) === String(f.id))
       }));
     }
 
@@ -98,134 +96,104 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="space-y-1">
-        <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Description</label>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Description</label>
         <input
           type="text"
           value={description}
           onChange={e => setDescription(e.target.value)}
-          className="block w-full rounded-2xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-4 border bg-white text-slate-900 placeholder:text-slate-400 outline-none transition-all"
-          placeholder="What was this for?"
+          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white text-gray-900 placeholder-gray-400"
+          placeholder="Lunch, Groceries, etc."
           required
         />
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-1">
-          <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Amount</label>
-          <div className="relative rounded-2xl shadow-sm">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              <span className="text-slate-400 sm:text-sm font-bold">₱</span>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Amount</label>
+          <div className="mt-1 relative rounded-md shadow-sm">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <span className="text-gray-500 sm:text-sm">₱</span>
             </div>
             <input
               type="number"
               step="0.01"
               value={amount}
               onChange={e => setAmount(e.target.value)}
-              className="block w-full pl-8 pr-4 rounded-2xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-4 border bg-white text-slate-900 outline-none transition-all"
+              className="block w-full pl-7 pr-4 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white text-gray-900"
               placeholder="0.00"
               required
             />
           </div>
         </div>
-        <div className="space-y-1">
-          <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Paid By</label>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Paid By</label>
           <select
             value={payerId}
             onChange={e => setPayerId(e.target.value)}
-            className="block w-full rounded-2xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-4 border bg-white text-slate-900 outline-none transition-all appearance-none"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white text-gray-900"
           >
             {friends.map(f => (
-              <option key={f.id} value={f.id} className="text-slate-900">{f.name}</option>
+              <option key={f.id} value={f.id} className="text-gray-900">{f.name}</option>
             ))}
           </select>
         </div>
       </div>
 
-      <div className="space-y-1">
-        <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Split Method</label>
-        <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200">
-          <button 
-            type="button"
-            onClick={() => setSplitType('equal')}
-            className={cn(
-              "flex-1 py-2 text-xs font-bold rounded-xl transition-all",
-              splitType === 'equal' ? "bg-white shadow-sm text-indigo-600" : "text-slate-500 hover:text-slate-700"
-            )}
-          >
-            Equally
-          </button>
-          <button 
-            type="button"
-            onClick={() => setSplitType('custom')}
-            className={cn(
-              "flex-1 py-2 text-xs font-bold rounded-xl transition-all",
-              splitType === 'custom' ? "bg-white shadow-sm text-indigo-600" : "text-slate-500 hover:text-slate-700"
-            )}
-          >
-            Custom
-          </button>
-        </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">How to Split?</label>
+        <select
+          value={splitType}
+          onChange={e => setSplitType(e.target.value as 'equal' | 'custom')}
+          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white text-gray-900"
+        >
+          <option value="equal" className="text-gray-900">Equally</option>
+          <option value="custom" className="text-gray-900">Custom Amounts</option>
+        </select>
       </div>
 
-      <div className="space-y-2">
-        <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Split Details</label>
-        <div className="space-y-2 border border-slate-100 rounded-[2rem] p-4 bg-slate-50/50">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Split Details:</label>
+        <div className="space-y-2 border rounded-xl p-3 bg-gray-50">
           {friends.map(f => (
-            <div key={f.id} className="flex items-center justify-between group">
+            <div key={f.id} className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                <div 
-                  onClick={() => toggleFriendSelection(f.id)}
-                  className={cn(
-                    "w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all cursor-pointer",
-                    selectedFriendIds.includes(f.id) 
-                      ? "bg-indigo-600 border-indigo-600 text-white" 
-                      : "bg-white border-slate-300"
-                  )}
-                >
-                  {selectedFriendIds.includes(f.id) && <Check className="w-3.5 h-3.5" strokeWidth={4} />}
-                </div>
-                <span className={cn(
-                  "text-sm transition-colors",
-                  selectedFriendIds.includes(f.id) ? "text-slate-900 font-bold" : "text-slate-400"
-                )}>
-                  {f.name} 
-                  {f.id === payerId && (
-                    <span className="text-[9px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full ml-2 font-black uppercase tracking-tighter">Payer</span>
-                  )}
+                <input 
+                  type="checkbox" 
+                  checked={selectedFriendIds.some(fid => String(fid) === String(f.id))}
+                  onChange={() => toggleFriendSelection(f.id)}
+                  className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 bg-white"
+                />
+                <span className={`text-sm ${selectedFriendIds.some(fid => String(fid) === String(f.id)) ? 'text-gray-900 font-medium' : 'text-gray-400'}`}>
+                  {f.name} {String(f.id) === String(payerId) && <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1 rounded ml-1">PAYER</span>}
                 </span>
               </div>
               
-              {selectedFriendIds.includes(f.id) && (
-                <div className="flex items-center space-x-3">
+              {selectedFriendIds.some(fid => String(fid) === String(f.id)) && (
+                <div className="flex items-center space-x-4">
                   {splitType === 'custom' && (
-                    <div className="relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-bold">₱</span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={customSplits[f.id] || ''}
-                        onChange={e => setCustomSplits({...customSplits, [f.id]: e.target.value})}
-                        className="w-24 pl-5 pr-2 py-1.5 text-xs border border-slate-200 rounded-xl bg-white text-slate-900 outline-none focus:border-indigo-500 transition-all"
-                        placeholder="0.00"
-                      />
-                    </div>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={customSplits[f.id] || ''}
+                      onChange={e => setCustomSplits({...customSplits, [f.id]: e.target.value})}
+                      className="w-20 p-1 text-xs border rounded bg-white text-gray-900"
+                      placeholder="Amount"
+                    />
                   )}
                   <button
                     type="button"
-                    disabled={f.id === payerId}
+                    disabled={String(f.id) === String(payerId)}
                     onClick={() => togglePaidStatus(f.id)}
-                    className={cn(
-                      "flex items-center space-x-1 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
-                      f.id === payerId || paidFriendIds.includes(f.id)
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-amber-100 text-amber-700",
-                      f.id === payerId && "opacity-50 cursor-not-allowed"
-                    )}
+                    className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[10px] font-bold transition-colors ${
+                      String(f.id) === String(payerId) || paidFriendIds.some(fid => String(fid) === String(f.id))
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-amber-100 text-amber-700'
+                    } ${String(f.id) === String(payerId) ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    {f.id === payerId || paidFriendIds.includes(f.id) ? (
-                      <><Check className="w-3 h-3" strokeWidth={3} /><span>Settled</span></>
+                    {String(f.id) === String(payerId) || paidFriendIds.some(fid => String(fid) === String(f.id)) ? (
+                      <><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg><span>Settled</span></>
                     ) : (
                       <span>Unpaid</span>
                     )}
@@ -236,33 +204,16 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
           ))}
         </div>
         {splitType === 'custom' && (
-           <div className={cn(
-            "text-right text-[10px] font-bold mt-1 flex items-center justify-end space-x-1",
-            Math.abs((Object.values(customSplits) as string[]).reduce((sum: number, val: string) => sum + (parseFloat(val) || 0), 0) - (parseFloat(amount) || 0)) < 0.01
-              ? "text-emerald-500"
-              : "text-rose-500"
-           )}>
-             <Info className="w-3 h-3" />
-             <span>
-               ₱{(Object.values(customSplits) as string[]).reduce((sum: number, val: string) => sum + (parseFloat(val) || 0), 0).toFixed(2)} / {amount ? `₱${parseFloat(amount).toFixed(2)}` : '₱0.00'}
-             </span>
+           <div className="text-right text-xs text-gray-500 mt-1">
+             Sum: ₱{(Object.values(customSplits) as string[]).reduce((sum: number, val: string) => sum + (parseFloat(val) || 0), 0).toFixed(2)} / {amount ? `₱${parseFloat(amount).toFixed(2)}` : '₱0.00'}
            </div>
         )}
       </div>
 
       <div className="flex space-x-3 pt-4">
-        <button 
-          type="button" 
-          onClick={onCancel} 
-          className="flex-1 py-3 text-slate-600 border border-slate-200 rounded-2xl hover:bg-slate-50 text-sm font-bold transition-all"
-        >
-          Cancel
-        </button>
-        <button 
-          type="submit" 
-          className="flex-1 py-3 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700 text-sm font-bold shadow-lg shadow-indigo-100 transition-all active:scale-95"
-        >
-          {expense ? 'Save Changes' : 'Add Bill'}
+        <button type="button" onClick={onCancel} className="flex-1 py-2 text-gray-700 border rounded-lg hover:bg-gray-50 text-sm font-medium">Cancel</button>
+        <button type="submit" className="flex-1 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-semibold">
+          {expense ? 'Save Changes' : 'Add Expense'}
         </button>
       </div>
     </form>
