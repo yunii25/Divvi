@@ -1,9 +1,9 @@
 
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 import { Friend, Expense } from '../types';
 
-const SUPABASE_URL = "https://leklodiatxgtlgcusgyh.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxla2xvZGlhdHhndGxnY3VzZ3loIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NjI1MDYsImV4cCI6MjA4NzAzODUwNn0.aZwDr0_n6G89RPirAulnKO0w8b5sX6YCob_ZLZVV4n8";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://leklodiatxgtlgcusgyh.supabase.co";
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxla2xvZGlhdHhndGxnY3VzZ3loIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NjI1MDYsImV4cCI6MjA4NzAzODUwNn0.aZwDr0_n6G89RPirAulnKO0w8b5sX6YCob_ZLZVV4n8";
 
 export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -30,6 +30,36 @@ const mapExpenseToDB = (exp: Partial<Expense>) => {
   if (exp.splitType !== undefined) row.split_type = exp.splitType;
   if (exp.status !== undefined) row.status = exp.status;
   return row;
+};
+
+export const auth = {
+  async signUp(email: string, password: string) {
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (error) throw error;
+    return data;
+  },
+
+  async signIn(email: string, password: string) {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    return data;
+  },
+
+  async signOut() {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+  },
+
+  async getUser(): Promise<User | null> {
+    const { data: { user } } = await supabase.auth.getUser();
+    return user;
+  },
+
+  onAuthStateChange(callback: (user: User | null) => void) {
+    return supabase.auth.onAuthStateChange((_event, session) => {
+      callback(session?.user ?? null);
+    });
+  }
 };
 
 export const db = {

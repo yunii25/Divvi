@@ -2,7 +2,7 @@
 import { Friend, Expense, Balance, Settlement } from "../types";
 
 export const calculateBalances = (friends: Friend[], expenses: Expense[]): Balance[] => {
-  const balancesMap: Record<string, { paid: number; owed: number }> = {};
+  const balancesMap: Record<number, { paid: number; owed: number }> = {};
 
   friends.forEach((f) => {
     balancesMap[f.id] = { paid: 0, owed: 0 };
@@ -65,7 +65,7 @@ export const calculateSettlements = (friends: Friend[], expenses: Expense[]): Se
   Object.entries(pairDebts).forEach(([key, netDebt]) => {
     if (Math.abs(netDebt) < 0.01) return;
 
-    const [idA, idB] = key.split('_');
+    const [idA, idB] = key.split('_').map(Number);
     if (netDebt > 0) {
       // A owes B
       settlements.push({ fromId: idA, toId: idB, amount: Number(netDebt.toFixed(2)) });

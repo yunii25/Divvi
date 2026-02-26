@@ -2,11 +2,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Friend, Expense, Balance, Settlement } from './types';
 import { calculateBalances, calculateSettlements } from './utils/calculations';
-import { db } from './services/supabaseService';
+import { db, auth } from './services/supabaseService';
 import ExpenseForm from './components/ExpenseForm';
 import Modal from './components/Modal';
+import Login from './components/Login';
+import { User } from '@supabase/supabase-js';
 
 const App: React.FC = () => {
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'summary'>('dashboard');
   const [friends, setFriends] = useState<Friend[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -24,6 +28,26 @@ const App: React.FC = () => {
 
   // Load initial data from Supabase
   useEffect(() => {
+    // Check initial auth state
+    auth.getUser().then((u) => {
+      setUser(u);
+      setIsAuthLoading(false);
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = auth.onAuthStateChange((u) => {
+      setUser(u);
+      setIsAuthLoading(false);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
     const fetchData = async () => {
       try {
         const [loadedFriends, loadedExpenses] = await Promise.all([
@@ -41,7 +65,7 @@ const App: React.FC = () => {
       }
     };
     fetchData();
-  }, []);
+  }, [user]);
 
   const balances = useMemo(() => calculateBalances(friends, expenses), [friends, expenses]);
   const settlements = useMemo(() => calculateSettlements(friends, expenses), [friends, expenses]);
@@ -195,6 +219,30 @@ const App: React.FC = () => {
     }
   };
 
+  const handleLogout = async () => {
+    if (confirm("Are you sure you want to logout?")) {
+      try {
+        await auth.signOut();
+        setUser(null);
+      } catch (err) {
+        alert("Logout failed");
+      }
+    }
+  };
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 flex-col space-y-4">
+        <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="font-bold text-gray-500 animate-pulse tracking-widest uppercase text-xs">Verifying Session...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Login onSuccess={() => {}} />;
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 flex-col space-y-4">
@@ -237,6 +285,7 @@ const App: React.FC = () => {
 
         <div className="flex items-center space-x-2">
            <button onClick={() => setIsFriendModalOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-full transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13.481 4.017a4 4 0 014.168 5.608" /></svg></button>
+           <button onClick={handleLogout} className="p-2 text-rose-600 hover:bg-rose-50 rounded-full transition-colors" title="Logout"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4-4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg></button>
         </div>
       </nav>
 
