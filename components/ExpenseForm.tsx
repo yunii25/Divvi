@@ -11,13 +11,13 @@ interface ExpenseFormProps {
 const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, onCancel }) => {
   const [description, setDescription] = useState(expense?.description || '');
   const [amount, setAmount] = useState(expense?.amount?.toString() || '');
-  const [payerId, setPayerId] = useState<string | number>(expense?.payerId || (friends[0]?.id || ''));
+  const [payerId, setPayerId] = useState<string>(expense?.payerId || (friends[0]?.id || ''));
   const [splitType, setSplitType] = useState<'equal' | 'custom'>(expense?.splitType || 'equal');
   const [status, setStatus] = useState<'pending' | 'settled'>(expense?.status || 'pending');
   
-  const [selectedFriendIds, setSelectedFriendIds] = useState<(string | number)[]>([]);
-  const [paidFriendIds, setPaidFriendIds] = useState<(string | number)[]>([]);
-  const [customSplits, setCustomSplits] = useState<Record<string | number, string>>({});
+  const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
+  const [paidFriendIds, setPaidFriendIds] = useState<string[]>([]);
+  const [customSplits, setCustomSplits] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (expense?.splits) {
@@ -27,7 +27,7 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
       setSelectedFriendIds(activeIds);
       setPaidFriendIds(settledIds);
       
-      const splitsObj: Record<string | number, string> = {};
+      const splitsObj: Record<string, string> = {};
       expense.splits.forEach(s => {
         splitsObj[s.friendId] = s.amount > 0 ? s.amount.toString() : '';
       });
@@ -35,7 +35,7 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
     } else {
       setSelectedFriendIds(friends.map(f => f.id));
       setPaidFriendIds([]); 
-      const defaultSplits: Record<string | number, string> = {};
+      const defaultSplits: Record<string, string> = {};
       friends.forEach(f => {
         defaultSplits[f.id] = '';
       });
@@ -43,15 +43,15 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
     }
   }, [expense, friends]);
 
-  const toggleFriendSelection = (id: string | number) => {
+  const toggleFriendSelection = (id: string) => {
     setSelectedFriendIds(prev => 
-      prev.some(fid => String(fid) === String(id)) ? prev.filter(fid => String(fid) !== String(id)) : [...prev, id]
+      prev.includes(id) ? prev.filter(fid => fid !== id) : [...prev, id]
     );
   };
 
-  const togglePaidStatus = (id: string | number) => {
+  const togglePaidStatus = (id: string) => {
     setPaidFriendIds(prev =>
-      prev.some(fid => String(fid) === String(id)) ? prev.filter(fid => String(fid) !== String(id)) : [...prev, id]
+      prev.includes(id) ? prev.filter(fid => fid !== id) : [...prev, id]
     );
   };
 
@@ -67,8 +67,8 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
       const perPerson = numAmount / selectedFriendIds.length;
       splits = friends.map(f => ({ 
         friendId: f.id, 
-        amount: selectedFriendIds.some(fid => String(fid) === String(f.id)) ? perPerson : 0,
-        isPaid: String(f.id) === String(payerId) || paidFriendIds.some(fid => String(fid) === String(f.id))
+        amount: selectedFriendIds.includes(f.id) ? perPerson : 0,
+        isPaid: f.id === payerId || paidFriendIds.includes(f.id)
       }));
     } else {
       const totalCustom = (Object.values(customSplits) as string[]).reduce((sum: number, val: string) => sum + (parseFloat(val) || 0), 0);
@@ -77,8 +77,8 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
       }
       splits = friends.map(f => ({
         friendId: f.id,
-        amount: selectedFriendIds.some(fid => String(fid) === String(f.id)) ? (parseFloat(customSplits[f.id]) || 0) : 0,
-        isPaid: String(f.id) === String(payerId) || paidFriendIds.some(fid => String(fid) === String(f.id))
+        amount: selectedFriendIds.includes(f.id) ? (parseFloat(customSplits[f.id]) || 0) : 0,
+        isPaid: f.id === payerId || paidFriendIds.includes(f.id)
       }));
     }
 
@@ -161,16 +161,16 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
               <div className="flex items-center space-x-3">
                 <input 
                   type="checkbox" 
-                  checked={selectedFriendIds.some(fid => String(fid) === String(f.id))}
+                  checked={selectedFriendIds.includes(f.id)}
                   onChange={() => toggleFriendSelection(f.id)}
                   className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 bg-white"
                 />
-                <span className={`text-sm ${selectedFriendIds.some(fid => String(fid) === String(f.id)) ? 'text-gray-900 font-medium' : 'text-gray-400'}`}>
-                  {f.name} {String(f.id) === String(payerId) && <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1 rounded ml-1">PAYER</span>}
+                <span className={`text-sm ${selectedFriendIds.includes(f.id) ? 'text-gray-900 font-medium' : 'text-gray-400'}`}>
+                  {f.name} {f.id === payerId && <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1 rounded ml-1">PAYER</span>}
                 </span>
               </div>
               
-              {selectedFriendIds.some(fid => String(fid) === String(f.id)) && (
+              {selectedFriendIds.includes(f.id) && (
                 <div className="flex items-center space-x-4">
                   {splitType === 'custom' && (
                     <input
@@ -184,15 +184,15 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
                   )}
                   <button
                     type="button"
-                    disabled={String(f.id) === String(payerId)}
+                    disabled={f.id === payerId}
                     onClick={() => togglePaidStatus(f.id)}
                     className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[10px] font-bold transition-colors ${
-                      String(f.id) === String(payerId) || paidFriendIds.some(fid => String(fid) === String(f.id))
+                      f.id === payerId || paidFriendIds.includes(f.id)
                         ? 'bg-emerald-100 text-emerald-700'
                         : 'bg-amber-100 text-amber-700'
-                    } ${String(f.id) === String(payerId) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    } ${f.id === payerId ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    {String(f.id) === String(payerId) || paidFriendIds.some(fid => String(fid) === String(f.id)) ? (
+                    {f.id === payerId || paidFriendIds.includes(f.id) ? (
                       <><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg><span>Settled</span></>
                     ) : (
                       <span>Unpaid</span>

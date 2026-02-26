@@ -1,21 +1,21 @@
 
 export interface Friend {
-  id: string | number;
+  id: string;
   name: string;
   avatar?: string;
 }
 
 export interface ExpenseSplit {
-  friendId: string | number;
+  friendId: string;
   amount: number;
   isPaid: boolean;
 }
 
 export interface Expense {
-  id: string | number;
+  id: string;
   description: string;
   amount: number;
-  payerId: string | number;
+  payerId: string;
   date: string;
   splits: ExpenseSplit[];
   splitType: 'equal' | 'custom';
@@ -23,14 +23,14 @@ export interface Expense {
 }
 
 export interface Balance {
-  friendId: string | number;
+  friendId: string;
   paid: number;
   owed: number;
   net: number;
 }
 
 export interface Settlement {
-  fromId: string | number;
-  toId: string | number;
+  fromId: string;
+  toId: string;
   amount: number;
 }

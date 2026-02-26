@@ -21,10 +21,10 @@ const App: React.FC = () => {
   const [isFriendModalOpen, setIsFriendModalOpen] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | undefined>(undefined);
-  const [editingFriendId, setEditingFriendId] = useState<string | number | null>(null);
+  const [editingFriendId, setEditingFriendId] = useState<string | null>(null);
   const [friendNameBuffer, setFriendNameBuffer] = useState('');
   const [newFriendName, setNewFriendName] = useState('');
-  const [expandedExpenseId, setExpandedExpenseId] = useState<string | number | null>(null);
+  const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
 
   // Load initial data from Supabase
   useEffect(() => {
@@ -114,12 +114,12 @@ const App: React.FC = () => {
     }
   };
 
-  const updateFriendName = async (id: string | number, name: string) => {
+  const updateFriendName = async (id: string, name: string) => {
     if (!name.trim()) return setEditingFriendId(null);
     setIsSyncing(true);
     try {
       await db.updateFriend(id, name.trim());
-      setFriends(friends.map(f => String(f.id) === String(id) ? { ...f, name: name.trim() } : f));
+      setFriends(friends.map(f => f.id === id ? { ...f, name: name.trim() } : f));
       setEditingFriendId(null);
     } catch (err) {
       alert("Error updating friend.");
@@ -128,8 +128,8 @@ const App: React.FC = () => {
     }
   };
 
-  const deleteFriend = async (id: string | number) => {
-    const hasActiveExpenses = expenses.some(e => String(e.payerId) === String(id) || e.splits.some(s => String(s.friendId) === String(id) && s.amount > 0));
+  const deleteFriend = async (id: string) => {
+    const hasActiveExpenses = expenses.some(e => e.payerId === id || e.splits.some(s => s.friendId === id && s.amount > 0));
     if (hasActiveExpenses) {
       alert("Cannot delete friend with existing expenses.");
       return;
@@ -139,7 +139,7 @@ const App: React.FC = () => {
     setIsSyncing(true);
     try {
       await db.deleteFriend(id);
-      setFriends(friends.filter(f => String(f.id) !== String(id)));
+      setFriends(friends.filter(f => f.id !== id));
     } catch (err) {
       alert("Error deleting friend.");
     } finally {
@@ -150,9 +150,9 @@ const App: React.FC = () => {
   const handleExpenseSubmit = async (expenseData: Partial<Expense>) => {
     setIsSyncing(true);
     try {
-      if (editingExpense && String(editingExpense.id) !== 'new') {
+      if (editingExpense && editingExpense.id !== 'new') {
         await db.updateExpense(editingExpense.id, expenseData);
-        setExpenses(expenses.map(e => String(e.id) === String(editingExpense.id) ? { ...e, ...expenseData } as Expense : e));
+        setExpenses(expenses.map(e => e.id === editingExpense.id ? { ...e, ...expenseData } as Expense : e));
       } else {
         const newExp = await db.addExpense({
           ...expenseData,
@@ -170,8 +170,8 @@ const App: React.FC = () => {
     }
   };
 
-  const toggleExpenseStatus = async (id: string | number) => {
-    const expense = expenses.find(e => String(e.id) === String(id));
+  const toggleExpenseStatus = async (id: string) => {
+    const expense = expenses.find(e => e.id === id);
     if (!expense) return;
     const newStatus = expense.status === 'pending' ? 'settled' : 'pending';
     const newSplits = expense.splits.map(s => ({ ...s, isPaid: newStatus === 'settled' }));
@@ -179,7 +179,7 @@ const App: React.FC = () => {
     setIsSyncing(true);
     try {
       await db.updateExpense(id, { status: newStatus, splits: newSplits });
-      setExpenses(expenses.map(e => String(e.id) === String(id) ? { ...e, status: newStatus, splits: newSplits } : e));
+      setExpenses(expenses.map(e => e.id === id ? { ...e, status: newStatus, splits: newSplits } : e));
     } catch (err) {
       alert("Sync failed.");
     } finally {
@@ -187,17 +187,17 @@ const App: React.FC = () => {
     }
   };
 
-  const toggleIndividualSplit = async (expenseId: string | number, friendId: string | number) => {
-    const exp = expenses.find(e => String(e.id) === String(expenseId));
+  const toggleIndividualSplit = async (expenseId: string, friendId: string) => {
+    const exp = expenses.find(e => e.id === expenseId);
     if (!exp) return;
-    const newSplits = exp.splits.map(s => String(s.friendId) === String(friendId) ? { ...s, isPaid: !s.isPaid } : s);
+    const newSplits = exp.splits.map(s => s.friendId === friendId ? { ...s, isPaid: !s.isPaid } : s);
     const allSettled = newSplits.filter(s => s.amount > 0).every(s => s.isPaid);
     const newStatus = allSettled ? 'settled' : 'pending';
 
     setIsSyncing(true);
     try {
       await db.updateExpense(expenseId, { splits: newSplits, status: newStatus });
-      setExpenses(expenses.map(e => String(e.id) === String(expenseId) ? { ...e, splits: newSplits, status: newStatus } as Expense : e));
+      setExpenses(expenses.map(e => e.id === expenseId ? { ...e, splits: newSplits, status: newStatus } as Expense : e));
     } catch (err) {
       alert("Update failed.");
     } finally {
@@ -205,12 +205,12 @@ const App: React.FC = () => {
     }
   };
 
-  const deleteExpense = async (id: string | number) => {
+  const deleteExpense = async (id: string) => {
     if (confirm("Delete this expense?")) {
       setIsSyncing(true);
       try {
         await db.deleteExpense(id);
-        setExpenses(expenses.filter(e => String(e.id) !== String(id)));
+        setExpenses(expenses.filter(e => e.id !== id));
       } catch (err) {
         alert("Error deleting.");
       } finally {
@@ -313,9 +313,9 @@ const App: React.FC = () => {
                     <div key={b.friendId} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 relative group overflow-hidden">
                       <div className={`absolute top-0 left-0 w-1 h-full ${b.net >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} />
                       <div className="flex items-center space-x-3 mb-4">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${b.net >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{friends.find(f => String(f.id) === String(b.friendId))?.name?.[0].toUpperCase() || '?'}</div>
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${b.net >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{friends.find(f => f.id === b.friendId)?.name?.[0].toUpperCase() || '?'}</div>
                         <div className="flex-1">
-                          <h3 className="font-bold text-gray-900">{friends.find(f => String(f.id) === String(b.friendId))?.name}</h3>
+                          <h3 className="font-bold text-gray-900">{friends.find(f => f.id === b.friendId)?.name}</h3>
                           <p className={`text-xs font-semibold ${b.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{b.net >= 0 ? `+ ₱${b.net.toFixed(2)}` : `- ₱${Math.abs(b.net).toFixed(2)}`}</p>
                         </div>
                       </div>
@@ -401,13 +401,13 @@ const App: React.FC = () => {
                 ) : (
                   expenses.map(exp => (
                     <div key={exp.id} className={`transition-all ${exp.status === 'settled' ? 'bg-gray-50/50 opacity-60' : 'bg-white'}`}>
-                      <div className="p-4 flex items-center justify-between cursor-pointer group" onClick={() => setExpandedExpenseId(String(expandedExpenseId) === String(exp.id) ? null : exp.id)}>
+                      <div className="p-4 flex items-center justify-between cursor-pointer group" onClick={() => setExpandedExpenseId(expandedExpenseId === exp.id ? null : exp.id)}>
                         <div className="flex items-center space-x-4">
                           <button onClick={(e) => { e.stopPropagation(); toggleExpenseStatus(exp.id); }} className={`p-2 rounded-xl border transition-all ${exp.status === 'settled' ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-gray-200 text-gray-300 hover:border-emerald-500'}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg></button>
                           <div>
                             <h4 className={`font-bold transition-all ${exp.status === 'settled' ? 'line-through text-gray-400' : 'text-gray-900'}`}>{exp.description}</h4>
                             <div className="flex items-center space-x-2 text-[10px] text-gray-500">
-                              <span className="font-bold text-gray-700 uppercase">{friends.find(f => String(f.id) === String(exp.payerId))?.name} PAID</span>
+                              <span className="font-bold text-gray-700 uppercase">{friends.find(f => f.id === exp.payerId)?.name} PAID</span>
                               <span>•</span>
                               <span>{new Date(exp.date).toLocaleDateString()}</span>
                             </div>
@@ -424,14 +424,14 @@ const App: React.FC = () => {
                           </div>
                         </div>
                       </div>
-                      {String(expandedExpenseId) === String(exp.id) && (
+                      {expandedExpenseId === exp.id && (
                         <div className="px-14 pb-4 pt-1 space-y-2 border-t border-gray-50 bg-gray-50/30">
                           <p className="text-[10px] font-bold text-gray-400 uppercase mb-2">Individual Split Tracking</p>
                           <div className="flex flex-wrap gap-2">
                             {exp.splits.filter(s => s.amount > 0).map(s => {
-                              const f = friends.find(fr => String(fr.id) === String(s.friendId));
+                              const f = friends.find(fr => fr.id === s.friendId);
                               return (
-                                <button key={String(s.friendId)} onClick={() => toggleIndividualSplit(exp.id, s.friendId)} className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl border text-xs transition-all ${s.isPaid ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-white border-gray-200 text-gray-600 shadow-sm hover:border-indigo-300'}`}>
+                                <button key={s.friendId} onClick={() => toggleIndividualSplit(exp.id, s.friendId)} className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl border text-xs transition-all ${s.isPaid ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-white border-gray-200 text-gray-600 shadow-sm hover:border-indigo-300'}`}>
                                   <span className="font-bold">{f?.name}</span>
                                   <span className="opacity-60">₱{s.amount.toFixed(2)}</span>
                                   {s.isPaid ? (
@@ -511,7 +511,7 @@ const App: React.FC = () => {
             {friends.length === 0 && <p className="text-center py-4 text-gray-400 text-sm">No friends added yet.</p>}
             {friends.map(f => (
               <div key={f.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100 group">
-                {String(editingFriendId) === String(f.id) ? (
+                {editingFriendId === f.id ? (
                   <div className="flex-1 flex items-center space-x-2">
                     <input 
                       autoFocus
@@ -558,7 +558,7 @@ const App: React.FC = () => {
         </div>
       </Modal>
 
-      <Modal isOpen={isExpenseModalOpen} onClose={() => { setIsExpenseModalOpen(false); setEditingExpense(undefined); }} title={editingExpense ? (String(editingExpense.id) === 'new' ? "New Bill Preview" : "Edit Bill") : "New Bill"}>
+      <Modal isOpen={isExpenseModalOpen} onClose={() => { setIsExpenseModalOpen(false); setEditingExpense(undefined); }} title={editingExpense ? (editingExpense.id === 'new' ? "New Bill Preview" : "Edit Bill") : "New Bill"}>
         <ExpenseForm friends={friends} expense={editingExpense} onSubmit={handleExpenseSubmit} onCancel={() => setIsExpenseModalOpen(false)}/>
       </Modal>
     </div>

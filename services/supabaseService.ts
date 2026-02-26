@@ -79,12 +79,12 @@ export const db = {
     return data;
   },
 
-  async updateFriend(id: string | number, name: string): Promise<void> {
+  async updateFriend(id: string, name: string): Promise<void> {
     const { error } = await supabase.from('friends').update({ name }).eq('id', id);
     if (error) throw error;
   },
 
-  async deleteFriend(id: string | number): Promise<void> {
+  async deleteFriend(id: string): Promise<void> {
     const { error } = await supabase.from('friends').delete().eq('id', id);
     if (error) throw error;
   },
@@ -109,13 +109,13 @@ export const db = {
     return mapExpenseFromDB(data);
   },
 
-  async updateExpense(id: string | number, expense: Partial<Expense>): Promise<void> {
+  async updateExpense(id: string, expense: Partial<Expense>): Promise<void> {
     const dbRow = mapExpenseToDB(expense);
     const { error } = await supabase.from('expenses').update(dbRow).eq('id', id);
     if (error) throw error;
   },
 
-  async deleteExpense(id: string | number): Promise<void> {
+  async deleteExpense(id: string): Promise<void> {
     const { error } = await supabase.from('expenses').delete().eq('id', id);
     if (error) throw error;
   }
