@@ -6,21 +6,19 @@
 
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+    @apply bg-slate-50 text-slate-900;
     font-family: var(--font-sans);
   }
 }
 
-@layer components {
-  .glass {
-    @apply bg-white/70 backdrop-blur-md border border-white/30;
-  }
-}
-
-@keyframes spin-slow {
+@keyframes spin {
   to { transform: rotate(360deg); }
 }
 
 .animate-spin-slow {
-  animation: spin-slow 3s linear infinite;
+  animation: spin 3s linear infinite;
+}
+
+.glass {
+  @apply bg-white/70 backdrop-blur-md border border-white/30;
 }
