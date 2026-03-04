@@ -1,9 +1,9 @@
 
-import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Friend, Expense } from '../types';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://leklodiatxgtlgcusgyh.supabase.co";
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxla2xvZGlhdHhndGxnY3VzZ3loIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NjI1MDYsImV4cCI6MjA4NzAzODUwNn0.aZwDr0_n6G89RPirAulnKO0w8b5sX6YCob_ZLZVV4n8";
+const SUPABASE_URL = "https://leklodiatxgtlgcusgyh.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxla2xvZGlhdHhndGxnY3VzZ3loIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NjI1MDYsImV4cCI6MjA4NzAzODUwNn0.aZwDr0_n6G89RPirAulnKO0w8b5sX6YCob_ZLZVV4n8";
 
 export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -16,7 +16,9 @@ const mapExpenseFromDB = (row: any): Expense => ({
   date: row.date,
   splits: row.splits,
   splitType: row.split_type,
-  status: row.status
+  status: row.status,
+  notes: row.notes,
+  proofOfPayment: row.proof_of_payment
 });
 
 // Helper to map JS Expense to DB row
@@ -29,37 +31,9 @@ const mapExpenseToDB = (exp: Partial<Expense>) => {
   if (exp.splits !== undefined) row.splits = exp.splits;
   if (exp.splitType !== undefined) row.split_type = exp.splitType;
   if (exp.status !== undefined) row.status = exp.status;
+  if (exp.notes !== undefined) row.notes = exp.notes;
+  if (exp.proofOfPayment !== undefined) row.proof_of_payment = exp.proofOfPayment;
   return row;
-};
-
-export const auth = {
-  async signUp(email: string, password: string) {
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) throw error;
-    return data;
-  },
-
-  async signIn(email: string, password: string) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-    return data;
-  },
-
-  async signOut() {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-  },
-
-  async getUser(): Promise<User | null> {
-    const { data: { user } } = await supabase.auth.getUser();
-    return user;
-  },
-
-  onAuthStateChange(callback: (user: User | null) => void) {
-    return supabase.auth.onAuthStateChange((_event, session) => {
-      callback(session?.user ?? null);
-    });
-  }
 };
 
 export const db = {
@@ -68,7 +42,7 @@ export const db = {
     const { data, error } = await supabase.from('friends').select('*').order('created_at', { ascending: true });
     if (error) {
       console.error("Supabase Error (getFriends):", error);
-      throw new Error(`Failed to load friends: ${error.message}`);
+      return [];
     }
     return data || [];
   },
@@ -94,7 +68,7 @@ export const db = {
     const { data, error } = await supabase.from('expenses').select('*').order('date', { ascending: false });
     if (error) {
       console.error("Supabase Error (getExpenses):", error);
-      throw new Error(`Failed to load expenses: ${error.message}`);
+      return [];
     }
     return (data || []).map(mapExpenseFromDB);
   },

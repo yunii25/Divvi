@@ -2,15 +2,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Friend, Expense, Balance, Settlement } from './types';
 import { calculateBalances, calculateSettlements } from './utils/calculations';
-import { db, auth } from './services/supabaseService';
+import { db } from './services/supabaseService';
 import ExpenseForm from './components/ExpenseForm';
 import Modal from './components/Modal';
-import Login from './components/Login';
-import { User } from '@supabase/supabase-js';
 
 const App: React.FC = () => {
-  const [user, setUser] = useState<User | null>(null);
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'summary'>('dashboard');
   const [friends, setFriends] = useState<Friend[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -28,26 +24,6 @@ const App: React.FC = () => {
 
   // Load initial data from Supabase
   useEffect(() => {
-    // Check initial auth state
-    auth.getUser().then((u) => {
-      setUser(u);
-      setIsAuthLoading(false);
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = auth.onAuthStateChange((u) => {
-      setUser(u);
-      setIsAuthLoading(false);
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!user) return;
-
     const fetchData = async () => {
       try {
         const [loadedFriends, loadedExpenses] = await Promise.all([
@@ -65,10 +41,15 @@ const App: React.FC = () => {
       }
     };
     fetchData();
-  }, [user]);
+  }, []);
 
   const balances = useMemo(() => calculateBalances(friends, expenses), [friends, expenses]);
   const settlements = useMemo(() => calculateSettlements(friends, expenses), [friends, expenses]);
+
+  const totalPaidOverall = useMemo(() => expenses.reduce((sum, e) => sum + e.amount, 0), [expenses]);
+  const totalStillOwed = useMemo(() => expenses.reduce((sum, e) => {
+    return sum + e.splits.reduce((sSum, s) => !s.isPaid ? sSum + s.amount : sSum, 0);
+  }, 0), [expenses]);
 
   const analytics = useMemo(() => {
     let totalSpend = 0;
@@ -219,30 +200,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleLogout = async () => {
-    if (confirm("Are you sure you want to logout?")) {
-      try {
-        await auth.signOut();
-        setUser(null);
-      } catch (err) {
-        alert("Logout failed");
-      }
-    }
-  };
-
-  if (isAuthLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 flex-col space-y-4">
-        <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="font-bold text-gray-500 animate-pulse tracking-widest uppercase text-xs">Verifying Session...</p>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <Login onSuccess={() => {}} />;
-  }
-
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 flex-col space-y-4">
@@ -284,20 +241,24 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-2">
-           {user && (
-             <div className="hidden md:flex flex-col items-end mr-2">
-               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Logged in as</span>
-               <span className="text-xs font-bold text-indigo-600 truncate max-w-[150px]">{user.email}</span>
-             </div>
-           )}
            <button onClick={() => setIsFriendModalOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-full transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13.481 4.017a4 4 0 014.168 5.608" /></svg></button>
-           <button onClick={handleLogout} className="p-2 text-rose-600 hover:bg-rose-50 rounded-full transition-colors" title="Logout"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4-4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg></button>
         </div>
       </nav>
 
       <main className="max-w-4xl mx-auto px-4 mt-8 space-y-10">
         {activeTab === 'dashboard' ? (
           <>
+            <section className="grid grid-cols-2 gap-4">
+              <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Paid Overall</p>
+                <p className="text-2xl font-black text-indigo-600">₱{totalPaidOverall.toLocaleString()}</p>
+              </div>
+              <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Owed to Others</p>
+                <p className="text-2xl font-black text-rose-600">₱{totalStillOwed.toLocaleString()}</p>
+              </div>
+            </section>
+
             <section className="space-y-4">
               <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Balances</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
@@ -313,9 +274,10 @@ const App: React.FC = () => {
                     <div key={b.friendId} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 relative group overflow-hidden">
                       <div className={`absolute top-0 left-0 w-1 h-full ${b.net >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} />
                       <div className="flex items-center space-x-3 mb-4">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${b.net >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{friends.find(f => f.id === b.friendId)?.name?.[0].toUpperCase() || '?'}</div>
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${b.net >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{friend?.name?.[0].toUpperCase() || '?'}</div>
                         <div className="flex-1">
-                          <h3 className="font-bold text-gray-900">{friends.find(f => f.id === b.friendId)?.name}</h3>
+                          <h3 className="font-bold text-gray-900">{friend?.name}</h3>
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">Expected to Receive</p>
                           <p className={`text-xs font-semibold ${b.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{b.net >= 0 ? `+ ₱${b.net.toFixed(2)}` : `- ₱${Math.abs(b.net).toFixed(2)}`}</p>
                         </div>
                       </div>
@@ -425,24 +387,43 @@ const App: React.FC = () => {
                         </div>
                       </div>
                       {expandedExpenseId === exp.id && (
-                        <div className="px-14 pb-4 pt-1 space-y-2 border-t border-gray-50 bg-gray-50/30">
-                          <p className="text-[10px] font-bold text-gray-400 uppercase mb-2">Individual Split Tracking</p>
-                          <div className="flex flex-wrap gap-2">
-                            {exp.splits.filter(s => s.amount > 0).map(s => {
-                              const f = friends.find(fr => fr.id === s.friendId);
-                              return (
-                                <button key={s.friendId} onClick={() => toggleIndividualSplit(exp.id, s.friendId)} className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl border text-xs transition-all ${s.isPaid ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-white border-gray-200 text-gray-600 shadow-sm hover:border-indigo-300'}`}>
-                                  <span className="font-bold">{f?.name}</span>
-                                  <span className="opacity-60">₱{s.amount.toFixed(2)}</span>
-                                  {s.isPaid ? (
-                                    <svg className="w-3.5 h-3.5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg>
-                                  ) : (
-                                    <div className="w-3.5 h-3.5 border rounded-full border-gray-300" />
-                                  )}
-                                </button>
-                              );
-                            })}
+                        <div className="px-14 pb-4 pt-1 space-y-4 border-t border-gray-50 bg-gray-50/30">
+                          <div>
+                            <p className="text-[10px] font-bold text-gray-400 uppercase mb-2">Individual Split Tracking</p>
+                            <div className="flex flex-wrap gap-2">
+                              {exp.splits.filter(s => s.amount > 0).map(s => {
+                                const f = friends.find(fr => fr.id === s.friendId);
+                                return (
+                                  <button key={s.friendId} onClick={() => toggleIndividualSplit(exp.id, s.friendId)} className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl border text-xs transition-all ${s.isPaid ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-white border-gray-200 text-gray-600 shadow-sm hover:border-indigo-300'}`}>
+                                    <span className="font-bold">{f?.name}</span>
+                                    <span className="opacity-60">₱{s.amount.toFixed(2)}</span>
+                                    {s.isPaid ? (
+                                      <svg className="w-3.5 h-3.5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg>
+                                    ) : (
+                                      <div className="w-3.5 h-3.5 border rounded-full border-gray-300" />
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
+
+                          {(exp.notes || exp.proofOfPayment) && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
+                              {exp.notes && (
+                                <div className="space-y-1">
+                                  <p className="text-[10px] font-bold text-gray-400 uppercase">Notes</p>
+                                  <p className="text-xs text-gray-600 italic">"{exp.notes}"</p>
+                                </div>
+                              )}
+                              {exp.proofOfPayment && (
+                                <div className="space-y-1">
+                                  <p className="text-[10px] font-bold text-gray-400 uppercase">Proof of Payment</p>
+                                  <img src={exp.proofOfPayment} alt="Proof" className="w-full max-h-32 object-contain rounded-lg border bg-white" />
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -452,7 +433,12 @@ const App: React.FC = () => {
             </section>
           </>
         ) : (
-          <section className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <section className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-12">
+            <div className="text-center space-y-2">
+              <h2 className="text-3xl font-black text-gray-900 tracking-tight">Financial Summary</h2>
+              <p className="text-gray-500 text-sm">Clear breakdown of group debts and contributions</p>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100">
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Total Group Spend</p>
@@ -460,36 +446,62 @@ const App: React.FC = () => {
                 <p className="text-[10px] text-emerald-500 font-bold mt-2">₱{analytics.totalSettledValue.toLocaleString()} SETTLED</p>
               </div>
               <div className="bg-indigo-600 p-6 rounded-[2rem] shadow-lg shadow-indigo-100 text-white">
-                <p className="text-xs font-bold text-indigo-200 uppercase tracking-widest mb-1">Settlement Status</p>
+                <p className="text-xs font-bold text-indigo-200 uppercase tracking-widest mb-1">Settlement Progress</p>
                 <p className="text-4xl font-bold tracking-tighter">{analytics.settlementProgress.toFixed(0)}%</p>
                 <div className="w-full bg-indigo-800 rounded-full h-1.5 mt-2 overflow-hidden"><div className="bg-white h-full transition-all duration-1000" style={{ width: `${analytics.settlementProgress}%` }} /></div>
               </div>
               <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100">
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Active Friends</p>
-                <p className="text-4xl font-bold text-gray-900 tracking-tighter">{friends.length}</p>
-                <p className="text-[10px] text-gray-400 mt-2 font-medium">Cloud sync active</p>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Total Outstanding</p>
+                <p className="text-4xl font-bold text-rose-600 tracking-tighter">₱{(analytics.totalSpend - analytics.totalSettledValue).toLocaleString()}</p>
+                <p className="text-[10px] text-gray-400 mt-2 font-medium">To be settled</p>
               </div>
             </div>
 
-            <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100 max-w-2xl mx-auto w-full">
-                <h3 className="text-lg font-bold text-gray-900 mb-8 flex items-center space-x-2"><div className="w-1.5 h-6 bg-indigo-500 rounded-full" /><span>Contribution Breakdown</span></h3>
-                <div className="space-y-6">
-                  {friends.map(f => {
-                    const total = analytics.friendSpending[f.id] || 0;
-                    const settled = analytics.friendSettled[f.id] || 0;
-                    const barWidth = analytics.maxFriendSpend > 0 ? (total / analytics.maxFriendSpend) * 100 : 0;
-                    const settledWidth = total > 0 ? (settled / total) * 100 : 0;
-                    return (
-                      <div key={f.id} className="space-y-2 group">
-                        <div className="flex justify-between text-xs font-bold text-gray-700"><span>{f.name}</span><span className="text-indigo-600">₱{settled.toFixed(2)} / ₱{total.toFixed(2)}</span></div>
-                        <div className="h-4 bg-gray-50 rounded-full overflow-hidden relative">
-                          <div className="h-full bg-indigo-100 absolute left-0 top-0 transition-all duration-1000" style={{ width: `${barWidth}%` }} />
-                          <div className="h-full bg-indigo-600 absolute left-0 top-0 transition-all duration-1000 z-10" style={{ width: `${(settledWidth * barWidth) / 100}%` }} />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100">
+                  <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center space-x-2"><div className="w-1.5 h-6 bg-indigo-500 rounded-full" /><span>Contribution Breakdown</span></h3>
+                  <div className="space-y-6">
+                    {friends.map(f => {
+                      const total = analytics.friendSpending[f.id] || 0;
+                      const settled = analytics.friendSettled[f.id] || 0;
+                      const barWidth = analytics.maxFriendSpend > 0 ? (total / analytics.maxFriendSpend) * 100 : 0;
+                      const settledWidth = total > 0 ? (settled / total) * 100 : 0;
+                      return (
+                        <div key={f.id} className="space-y-2 group">
+                          <div className="flex justify-between text-xs font-bold text-gray-700"><span>{f.name}</span><span className="text-indigo-600">₱{settled.toFixed(2)} / ₱{total.toFixed(2)}</span></div>
+                          <div className="h-4 bg-gray-50 rounded-full overflow-hidden relative">
+                            <div className="h-full bg-indigo-100 absolute left-0 top-0 transition-all duration-1000" style={{ width: `${barWidth}%` }} />
+                            <div className="h-full bg-indigo-600 absolute left-0 top-0 transition-all duration-1000 z-10" style={{ width: `${(settledWidth * barWidth) / 100}%` }} />
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+              </div>
+
+              <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100">
+                  <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center space-x-2"><div className="w-1.5 h-6 bg-emerald-500 rounded-full" /><span>Settlement Plan</span></h3>
+                  {settlements.length > 0 ? (
+                    <div className="space-y-4">
+                      {settlements.map((s, idx) => {
+                        const fromFriend = friends.find(f => f.id === s.fromId);
+                        const toFriend = friends.find(f => f.id === s.toId);
+                        return (
+                          <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                            <div className="flex items-center space-x-3">
+                              <span className="font-bold text-gray-900">{fromFriend?.name}</span>
+                              <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+                              <span className="font-bold text-gray-900">{toFriend?.name}</span>
+                            </div>
+                            <span className="text-lg font-black text-indigo-600">₱{s.amount.toFixed(2)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="py-12 text-center text-gray-400 italic">All settled up! No transfers needed.</div>
+                  )}
+              </div>
             </div>
           </section>
         )}

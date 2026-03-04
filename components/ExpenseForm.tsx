@@ -11,9 +11,12 @@ interface ExpenseFormProps {
 const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, onCancel }) => {
   const [description, setDescription] = useState(expense?.description || '');
   const [amount, setAmount] = useState(expense?.amount?.toString() || '');
-  const [payerId, setPayerId] = useState<string>(expense?.payerId || (friends[0]?.id || ''));
+  const [payerId, setPayerId] = useState(expense?.payerId || (friends[0]?.id || ''));
   const [splitType, setSplitType] = useState<'equal' | 'custom'>(expense?.splitType || 'equal');
   const [status, setStatus] = useState<'pending' | 'settled'>(expense?.status || 'pending');
+  const [date, setDate] = useState(expense?.date ? new Date(expense.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+  const [notes, setNotes] = useState(expense?.notes || '');
+  const [proofOfPayment, setProofOfPayment] = useState(expense?.proofOfPayment || '');
   
   const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
   const [paidFriendIds, setPaidFriendIds] = useState<string[]>([]);
@@ -91,8 +94,25 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
       splitType,
       status: allSettled ? 'settled' : status,
       splits,
-      date: expense?.date || new Date().toISOString()
+      date: new Date(date).toISOString(),
+      notes,
+      proofOfPayment
     });
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 1024 * 1024) { // 1MB limit for base64
+        alert("File is too large. Please upload an image smaller than 1MB.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setProofOfPayment(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   return (
@@ -139,6 +159,17 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
             ))}
           </select>
         </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Date</label>
+        <input
+          type="date"
+          value={date}
+          onChange={e => setDate(e.target.value)}
+          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white text-gray-900"
+          required
+        />
       </div>
 
       <div>
@@ -208,6 +239,41 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
              Sum: ₱{(Object.values(customSplits) as string[]).reduce((sum: number, val: string) => sum + (parseFloat(val) || 0), 0).toFixed(2)} / {amount ? `₱${parseFloat(amount).toFixed(2)}` : '₱0.00'}
            </div>
         )}
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Notes</label>
+        <textarea
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white text-gray-900 placeholder-gray-400"
+          placeholder="Add extra details..."
+          rows={2}
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Proof of Payment</label>
+        <div className="mt-1 flex items-center space-x-4">
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleFileChange}
+            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+          />
+          {proofOfPayment && (
+            <div className="relative w-12 h-12 rounded-lg overflow-hidden border">
+              <img src={proofOfPayment} alt="Proof" className="w-full h-full object-cover" />
+              <button 
+                type="button" 
+                onClick={() => setProofOfPayment('')}
+                className="absolute top-0 right-0 bg-rose-500 text-white p-0.5 rounded-bl-lg"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex space-x-3 pt-4">

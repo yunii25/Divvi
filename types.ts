@@ -20,6 +20,8 @@ export interface Expense {
   splits: ExpenseSplit[];
   splitType: 'equal' | 'custom';
   status: 'pending' | 'settled';
+  notes?: string;
+  proofOfPayment?: string;
 }
 
 export interface Balance {
