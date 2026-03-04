@@ -16,7 +16,7 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
   const [status, setStatus] = useState<'pending' | 'settled'>(expense?.status || 'pending');
   const [date, setDate] = useState(expense?.date ? new Date(expense.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState(expense?.notes || '');
-  const [proofOfPayment, setProofOfPayment] = useState(expense?.proofOfPayment || '');
+  const [proofOfPayment, setProofOfPayment] = useState<string[]>(expense?.proofOfPayment || []);
   
   const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
   const [paidFriendIds, setPaidFriendIds] = useState<string[]>([]);
@@ -101,18 +101,25 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 1024 * 1024) { // 1MB limit for base64
-        alert("File is too large. Please upload an image smaller than 1MB.");
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setProofOfPayment(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+    const files = e.target.files;
+    if (files) {
+      const newFiles: string[] = [];
+      Array.from(files).forEach(file => {
+        if (file.size > 1024 * 1024) { // 1MB limit for base64
+          alert(`File ${file.name} is too large. Please upload images smaller than 1MB.`);
+          return;
+        }
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setProofOfPayment(prev => [...prev, reader.result as string]);
+        };
+        reader.readAsDataURL(file);
+      });
     }
+  };
+
+  const removeFile = (index: number) => {
+    setProofOfPayment(prev => prev.filter((_, i) => i !== index));
   };
 
   return (
@@ -254,23 +261,28 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
 
       <div>
         <label className="block text-sm font-medium text-gray-700">Proof of Payment</label>
-        <div className="mt-1 flex items-center space-x-4">
+        <div className="mt-1 space-y-3">
           <input
             type="file"
             accept="image/*"
+            multiple
             onChange={handleFileChange}
             className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
           />
-          {proofOfPayment && (
-            <div className="relative w-12 h-12 rounded-lg overflow-hidden border">
-              <img src={proofOfPayment} alt="Proof" className="w-full h-full object-cover" />
-              <button 
-                type="button" 
-                onClick={() => setProofOfPayment('')}
-                className="absolute top-0 right-0 bg-rose-500 text-white p-0.5 rounded-bl-lg"
-              >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
+          {proofOfPayment.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {proofOfPayment.map((file, idx) => (
+                <div key={idx} className="relative w-16 h-16 rounded-lg overflow-hidden border">
+                  <img src={file} alt={`Proof ${idx + 1}`} className="w-full h-full object-cover" />
+                  <button 
+                    type="button" 
+                    onClick={() => removeFile(idx)}
+                    className="absolute top-0 right-0 bg-rose-500 text-white p-0.5 rounded-bl-lg"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>

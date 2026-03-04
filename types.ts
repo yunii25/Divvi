@@ -21,7 +21,7 @@ export interface Expense {
   splitType: 'equal' | 'custom';
   status: 'pending' | 'settled';
   notes?: string;
-  proofOfPayment?: string;
+  proofOfPayment?: string[];
 }
 
 export interface Balance {

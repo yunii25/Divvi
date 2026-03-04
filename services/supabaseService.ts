@@ -19,7 +19,7 @@ const mapExpenseFromDB = (row: any): Expense => ({
   splitType: row.split_type,
   status: row.status,
   notes: row.notes,
-  proofOfPayment: row.proof_of_payment
+  proofOfPayment: row.proof_of_payment ? JSON.parse(row.proof_of_payment) : []
 });
 
 // Helper to map JS Expense to DB row
@@ -33,7 +33,7 @@ const mapExpenseToDB = (exp: Partial<Expense>) => {
   if (exp.splitType !== undefined) row.split_type = exp.splitType;
   if (exp.status !== undefined) row.status = exp.status;
   if (exp.notes !== undefined) row.notes = exp.notes;
-  if (exp.proofOfPayment !== undefined) row.proof_of_payment = exp.proofOfPayment;
+  if (exp.proofOfPayment !== undefined) row.proof_of_payment = JSON.stringify(exp.proofOfPayment);
   return row;
 };
 

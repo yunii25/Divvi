@@ -416,10 +416,23 @@ const App: React.FC = () => {
                                   <p className="text-xs text-gray-600 italic">"{exp.notes}"</p>
                                 </div>
                               )}
-                              {exp.proofOfPayment && (
+                              {exp.proofOfPayment && exp.proofOfPayment.length > 0 && (
                                 <div className="space-y-1">
                                   <p className="text-[10px] font-bold text-gray-400 uppercase">Proof of Payment</p>
-                                  <img src={exp.proofOfPayment} alt="Proof" className="w-full max-h-32 object-contain rounded-lg border bg-white" />
+                                  <div className="flex flex-wrap gap-2">
+                                    {exp.proofOfPayment.map((img, idx) => (
+                                      <img 
+                                        key={idx} 
+                                        src={img} 
+                                        alt={`Proof ${idx + 1}`} 
+                                        className="w-16 h-16 object-cover rounded-lg border bg-white cursor-zoom-in hover:scale-105 transition-transform" 
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          window.open(img, '_blank');
+                                        }}
+                                      />
+                                    ))}
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -506,10 +519,12 @@ const App: React.FC = () => {
         )}
       </main>
 
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 glass px-6 py-3 rounded-2xl shadow-xl flex items-center space-x-8 z-50 border border-white/50">
+      <div className="fixed bottom-6 inset-x-0 flex justify-center z-50 px-4">
+        <div className="glass px-6 py-3 rounded-2xl shadow-xl flex items-center space-x-8 border border-white/50 max-w-full overflow-x-auto">
           <button onClick={() => setActiveTab('dashboard')} className={`transition-colors p-2 rounded-xl ${activeTab === 'dashboard' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400 hover:text-indigo-400'}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg></button>
-          <button onClick={() => setIsExpenseModalOpen(true)} className="w-14 h-14 bg-indigo-600 text-white rounded-full flex items-center justify-center shadow-xl -mt-12 hover:scale-110 active:scale-95 transition-all"><svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M12 4v16m8-8H4"/></svg></button>
+          <button onClick={() => setIsExpenseModalOpen(true)} className="w-14 h-14 bg-indigo-600 text-white rounded-full flex items-center justify-center shadow-xl -mt-12 hover:scale-110 active:scale-95 transition-all shrink-0"><svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M12 4v16m8-8H4"/></svg></button>
           <button onClick={() => setActiveTab('summary')} className={`transition-colors p-2 rounded-xl ${activeTab === 'summary' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400 hover:text-indigo-400'}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg></button>
+        </div>
       </div>
 
       <Modal isOpen={isFriendModalOpen} onClose={() => { setIsFriendModalOpen(false); setEditingFriendId(null); }} title="Friends List">
