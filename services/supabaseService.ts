@@ -9,18 +9,32 @@ export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON
 export const auth = supabase.auth;
 
 // Helper to map DB row to JS Expense object
-const mapExpenseFromDB = (row: any): Expense => ({
-  id: row.id,
-  description: row.description,
-  amount: parseFloat(row.amount),
-  payerId: row.payer_id,
-  date: row.date,
-  splits: row.splits,
-  splitType: row.split_type,
-  status: row.status,
-  notes: row.notes,
-  proofOfPayment: row.proof_of_payment ? JSON.parse(row.proof_of_payment) : []
-});
+const mapExpenseFromDB = (row: any): Expense => {
+  let proofOfPayment: string[] = [];
+  if (row.proof_of_payment) {
+    try {
+      // Try to parse as JSON array
+      const parsed = JSON.parse(row.proof_of_payment);
+      proofOfPayment = Array.isArray(parsed) ? parsed : [row.proof_of_payment];
+    } catch (e) {
+      // If parsing fails, it's likely a legacy single base64 string
+      proofOfPayment = [row.proof_of_payment];
+    }
+  }
+
+  return {
+    id: row.id,
+    description: row.description,
+    amount: parseFloat(row.amount),
+    payerId: row.payer_id,
+    date: row.date,
+    splits: row.splits,
+    splitType: row.split_type,
+    status: row.status,
+    notes: row.notes,
+    proofOfPayment
+  };
+};
 
 // Helper to map JS Expense to DB row
 const mapExpenseToDB = (exp: Partial<Expense>) => {
