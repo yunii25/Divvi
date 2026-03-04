@@ -5,6 +5,7 @@ import { calculateBalances, calculateSettlements } from './utils/calculations';
 import { db } from './services/supabaseService';
 import ExpenseForm from './components/ExpenseForm';
 import Modal from './components/Modal';
+import ImageCarousel from './components/ImageCarousel';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'summary'>('dashboard');
@@ -21,6 +22,10 @@ const App: React.FC = () => {
   const [friendNameBuffer, setFriendNameBuffer] = useState('');
   const [newFriendName, setNewFriendName] = useState('');
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
+
+  const [carouselImages, setCarouselImages] = useState<string[]>([]);
+  const [carouselInitialIndex, setCarouselInitialIndex] = useState(0);
+  const [isCarouselOpen, setIsCarouselOpen] = useState(false);
 
   // Load initial data from Supabase
   useEffect(() => {
@@ -428,7 +433,9 @@ const App: React.FC = () => {
                                         className="w-16 h-16 object-cover rounded-lg border bg-white cursor-zoom-in hover:scale-105 transition-transform" 
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          window.open(img, '_blank');
+                                          setCarouselImages(exp.proofOfPayment || []);
+                                          setCarouselInitialIndex(idx);
+                                          setIsCarouselOpen(true);
                                         }}
                                       />
                                     ))}
@@ -587,6 +594,13 @@ const App: React.FC = () => {
       <Modal isOpen={isExpenseModalOpen} onClose={() => { setIsExpenseModalOpen(false); setEditingExpense(undefined); }} title={editingExpense ? (editingExpense.id === 'new' ? "New Bill Preview" : "Edit Bill") : "New Bill"}>
         <ExpenseForm friends={friends} expense={editingExpense} onSubmit={handleExpenseSubmit} onCancel={() => setIsExpenseModalOpen(false)}/>
       </Modal>
+
+      <ImageCarousel 
+        images={carouselImages} 
+        initialIndex={carouselInitialIndex} 
+        isOpen={isCarouselOpen} 
+        onClose={() => setIsCarouselOpen(false)} 
+      />
     </div>
   );
 };
