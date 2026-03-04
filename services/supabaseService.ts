@@ -6,6 +6,7 @@ const SUPABASE_URL = "https://leklodiatxgtlgcusgyh.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxla2xvZGlhdHhndGxnY3VzZ3loIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NjI1MDYsImV4cCI6MjA4NzAzODUwNn0.aZwDr0_n6G89RPirAulnKO0w8b5sX6YCob_ZLZVV4n8";
 
 export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+export const auth = supabase.auth;
 
 // Helper to map DB row to JS Expense object
 const mapExpenseFromDB = (row: any): Expense => ({
