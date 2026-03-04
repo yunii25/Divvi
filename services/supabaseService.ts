@@ -32,7 +32,12 @@ const mapExpenseFromDB = (row: any): Expense => {
     splitType: row.split_type,
     status: row.status,
     notes: row.notes,
-    proofOfPayment
+    proofOfPayment,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedBy: row.updated_by,
+    updatedAt: row.updated_at,
+    history: row.history || []
   };
 };
 
@@ -48,6 +53,9 @@ const mapExpenseToDB = (exp: Partial<Expense>) => {
   if (exp.status !== undefined) row.status = exp.status;
   if (exp.notes !== undefined) row.notes = exp.notes;
   if (exp.proofOfPayment !== undefined) row.proof_of_payment = JSON.stringify(exp.proofOfPayment);
+  if (exp.createdBy !== undefined) row.created_by = exp.createdBy;
+  if (exp.updatedBy !== undefined) row.updated_by = exp.updatedBy;
+  if (exp.history !== undefined) row.history = exp.history;
   return row;
 };
 
@@ -63,13 +71,14 @@ export const db = {
   },
 
   async addFriend(name: string): Promise<Friend> {
-    const { data, error } = await supabase.from('friends').insert([{ name }]).select().single();
+    const role = name.toLowerCase() === 'eunice' ? 'admin' : 'user';
+    const { data, error } = await supabase.from('friends').insert([{ name, role, pin: '1234' }]).select().single();
     if (error) throw error;
     return data;
   },
 
-  async updateFriend(id: string, name: string): Promise<void> {
-    const { error } = await supabase.from('friends').update({ name }).eq('id', id);
+  async updateFriend(id: string, updates: Partial<Friend>): Promise<void> {
+    const { error } = await supabase.from('friends').update(updates).eq('id', id);
     if (error) throw error;
   },
 

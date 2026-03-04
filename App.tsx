@@ -6,6 +6,7 @@ import { db } from './services/supabaseService';
 import ExpenseForm from './components/ExpenseForm';
 import Modal from './components/Modal';
 import ImageCarousel from './components/ImageCarousel';
+import Login from './components/Login';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'summary'>('dashboard');
@@ -14,12 +15,15 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [hasError, setHasError] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<Friend | null>(null);
 
   const [isFriendModalOpen, setIsFriendModalOpen] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | undefined>(undefined);
   const [editingFriendId, setEditingFriendId] = useState<string | null>(null);
   const [friendNameBuffer, setFriendNameBuffer] = useState('');
+  const [resettingPinId, setResettingPinId] = useState<string | null>(null);
+  const [newPinBuffer, setNewPinBuffer] = useState('');
   const [newFriendName, setNewFriendName] = useState('');
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
 
@@ -29,6 +33,19 @@ const App: React.FC = () => {
 
   // Load initial data from Supabase
   useEffect(() => {
+    const savedUser = localStorage.getItem('sinigeng_user');
+    if (savedUser) {
+      try {
+        const user = JSON.parse(savedUser);
+        if (user.name.toLowerCase() === 'eunice') {
+          user.role = 'admin';
+        }
+        setCurrentUser(user);
+      } catch (e) {
+        localStorage.removeItem('sinigeng_user');
+      }
+    }
+
     const fetchData = async () => {
       try {
         const [loadedFriends, loadedExpenses] = await Promise.all([
@@ -47,6 +64,20 @@ const App: React.FC = () => {
     };
     fetchData();
   }, []);
+
+  const handleLogin = (user: Friend) => {
+    const updatedUser = { ...user };
+    if (user.name.toLowerCase() === 'eunice') {
+      updatedUser.role = 'admin';
+    }
+    setCurrentUser(updatedUser);
+    localStorage.setItem('sinigeng_user', JSON.stringify(updatedUser));
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('sinigeng_user');
+  };
 
   const balances = useMemo(() => calculateBalances(friends, expenses), [friends, expenses]);
   const settlements = useMemo(() => calculateSettlements(friends, expenses), [friends, expenses]);
@@ -104,7 +135,7 @@ const App: React.FC = () => {
     if (!name.trim()) return setEditingFriendId(null);
     setIsSyncing(true);
     try {
-      await db.updateFriend(id, name.trim());
+      await db.updateFriend(id, { name: name.trim() });
       setFriends(friends.map(f => f.id === id ? { ...f, name: name.trim() } : f));
       setEditingFriendId(null);
     } catch (err) {
@@ -114,13 +145,34 @@ const App: React.FC = () => {
     }
   };
 
+  const updateFriendPin = async (id: string, pin: string) => {
+    if (pin.length !== 4) return alert("PIN must be 4 digits.");
+    setIsSyncing(true);
+    try {
+      await db.updateFriend(id, { pin });
+      setFriends(friends.map(f => f.id === id ? { ...f, pin } : f));
+      setResettingPinId(null);
+      setNewPinBuffer('');
+      alert("PIN updated successfully.");
+    } catch (err) {
+      alert("Error updating PIN.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleUpdatePin = async (id: string, pin: string) => {
+    await db.updateFriend(id, { pin });
+    setFriends(friends.map(f => f.id === id ? { ...f, pin } : f));
+  };
+
   const deleteFriend = async (id: string) => {
     const hasActiveExpenses = expenses.some(e => e.payerId === id || e.splits.some(s => s.friendId === id && s.amount > 0));
     if (hasActiveExpenses) {
       alert("Cannot delete friend with existing expenses.");
       return;
     }
-    if (!confirm("Remove this friend?")) return;
+    if (!window.confirm("Remove this friend?")) return;
     
     setIsSyncing(true);
     try {
@@ -134,16 +186,55 @@ const App: React.FC = () => {
   };
 
   const handleExpenseSubmit = async (expenseData: Partial<Expense>) => {
+    if (!currentUser) return;
     setIsSyncing(true);
     try {
       if (editingExpense && editingExpense.id !== 'new') {
-        await db.updateExpense(editingExpense.id, expenseData);
-        setExpenses(expenses.map(e => e.id === editingExpense.id ? { ...e, ...expenseData } as Expense : e));
+        const oldExp = expenses.find(e => e.id === editingExpense.id);
+        const history = [...(oldExp?.history || [])];
+        
+        // Track changes
+        const changes: string[] = [];
+        if (expenseData.description && expenseData.description !== oldExp?.description) changes.push(`description to "${expenseData.description}"`);
+        if (expenseData.amount !== undefined && expenseData.amount !== oldExp?.amount) changes.push(`amount to ₱${expenseData.amount}`);
+        if (expenseData.payerId && expenseData.payerId !== oldExp?.payerId) {
+          const newPayer = friends.find(f => f.id === expenseData.payerId)?.name;
+          changes.push(`payer to ${newPayer}`);
+        }
+        if (expenseData.notes !== undefined && expenseData.notes !== oldExp?.notes) changes.push(`notes`);
+        if (expenseData.proofOfPayment !== undefined && JSON.stringify(expenseData.proofOfPayment) !== JSON.stringify(oldExp?.proofOfPayment)) changes.push(`attachments`);
+
+        if (changes.length > 0) {
+          history.push({
+            id: Math.random().toString(36).substr(2, 9),
+            userId: currentUser.id,
+            action: `Updated ${changes.join(', ')}`,
+            timestamp: new Date().toISOString()
+          });
+        }
+
+        const updates = {
+          ...expenseData,
+          updatedBy: currentUser.id,
+          updatedAt: new Date().toISOString(),
+          history
+        };
+        await db.updateExpense(editingExpense.id, updates);
+        setExpenses(expenses.map(e => e.id === editingExpense.id ? { ...e, ...updates } as Expense : e));
       } else {
+        const initialHistory = [{
+          id: Math.random().toString(36).substr(2, 9),
+          userId: currentUser.id,
+          action: 'Created expense',
+          timestamp: new Date().toISOString()
+        }];
         const newExp = await db.addExpense({
           ...expenseData,
           status: expenseData.status || 'pending',
           date: expenseData.date || new Date().toISOString(),
+          createdBy: currentUser.id,
+          createdAt: new Date().toISOString(),
+          history: initialHistory
         } as Omit<Expense, 'id'>);
         setExpenses([newExp, ...expenses]);
       }
@@ -157,15 +248,36 @@ const App: React.FC = () => {
   };
 
   const toggleExpenseStatus = async (id: string) => {
+    if (!currentUser) return;
     const expense = expenses.find(e => e.id === id);
     if (!expense) return;
-    const newStatus = expense.status === 'pending' ? 'settled' : 'pending';
-    const newSplits = expense.splits.map(s => ({ ...s, isPaid: newStatus === 'settled' }));
+    const newStatus: 'pending' | 'settled' = expense.status === 'pending' ? 'settled' : 'pending';
+    const newSplits = expense.splits.map(s => ({ 
+      ...s, 
+      isPaid: newStatus === 'settled',
+      paidBy: newStatus === 'settled' ? currentUser.id : undefined,
+      paidAt: newStatus === 'settled' ? new Date().toISOString() : undefined
+    }));
     
     setIsSyncing(true);
     try {
-      await db.updateExpense(id, { status: newStatus, splits: newSplits });
-      setExpenses(expenses.map(e => e.id === id ? { ...e, status: newStatus, splits: newSplits } : e));
+      const history = [...(expense.history || [])];
+      history.push({
+        id: Math.random().toString(36).substr(2, 9),
+        userId: currentUser.id,
+        action: `Marked as ${newStatus}`,
+        timestamp: new Date().toISOString()
+      });
+
+      const updates = { 
+        status: newStatus, 
+        splits: newSplits,
+        updatedBy: currentUser.id,
+        updatedAt: new Date().toISOString(),
+        history
+      };
+      await db.updateExpense(id, updates);
+      setExpenses(expenses.map(e => e.id === id ? { ...e, ...updates } as Expense : e));
     } catch (err) {
       alert("Sync failed.");
     } finally {
@@ -174,16 +286,45 @@ const App: React.FC = () => {
   };
 
   const toggleIndividualSplit = async (expenseId: string, friendId: string) => {
+    if (!currentUser) return;
     const exp = expenses.find(e => e.id === expenseId);
     if (!exp) return;
-    const newSplits = exp.splits.map(s => s.friendId === friendId ? { ...s, isPaid: !s.isPaid } : s);
+    const newSplits = exp.splits.map(s => {
+      if (s.friendId === friendId) {
+        const isNowPaid = !s.isPaid;
+        return { 
+          ...s, 
+          isPaid: isNowPaid,
+          paidBy: isNowPaid ? currentUser.id : undefined,
+          paidAt: isNowPaid ? new Date().toISOString() : undefined
+        };
+      }
+      return s;
+    });
     const allSettled = newSplits.filter(s => s.amount > 0).every(s => s.isPaid);
-    const newStatus = allSettled ? 'settled' : 'pending';
+    const newStatus: 'pending' | 'settled' = allSettled ? 'settled' : 'pending';
 
     setIsSyncing(true);
     try {
-      await db.updateExpense(expenseId, { splits: newSplits, status: newStatus });
-      setExpenses(expenses.map(e => e.id === expenseId ? { ...e, splits: newSplits, status: newStatus } as Expense : e));
+      const history = [...(exp.history || [])];
+      const friendName = friends.find(f => f.id === friendId)?.name;
+      const isNowPaid = !exp.splits.find(s => s.friendId === friendId)?.isPaid;
+      history.push({
+        id: Math.random().toString(36).substr(2, 9),
+        userId: currentUser.id,
+        action: `${isNowPaid ? 'Marked' : 'Unmarked'} ${friendName}'s share as paid`,
+        timestamp: new Date().toISOString()
+      });
+
+      const updates = { 
+        splits: newSplits, 
+        status: newStatus,
+        updatedBy: currentUser.id,
+        updatedAt: new Date().toISOString(),
+        history
+      };
+      await db.updateExpense(expenseId, updates);
+      setExpenses(expenses.map(e => e.id === expenseId ? { ...e, ...updates } as Expense : e));
     } catch (err) {
       alert("Update failed.");
     } finally {
@@ -192,7 +333,7 @@ const App: React.FC = () => {
   };
 
   const deleteExpense = async (id: string) => {
-    if (confirm("Delete this expense?")) {
+    if (window.confirm("Delete this expense?")) {
       setIsSyncing(true);
       try {
         await db.deleteExpense(id);
@@ -207,9 +348,11 @@ const App: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 flex-col space-y-4">
-        <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="font-bold text-gray-500 animate-pulse tracking-widest uppercase text-xs">Connecting to Cloud...</p>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-indigo-600 font-bold animate-pulse">Loading Sinigeng...</p>
+        </div>
       </div>
     );
   }
@@ -229,11 +372,15 @@ const App: React.FC = () => {
     );
   }
 
+  if (!currentUser) {
+    return <Login friends={friends} onLogin={handleLogin} onUpdatePin={handleUpdatePin} />;
+  }
+
   return (
     <div className="min-h-screen pb-20">
       <nav className="glass sticky top-0 z-40 px-4 py-3 shadow-sm flex items-center justify-between">
         <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-lg">S</div>
+          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-sm shadow-sm rotate-3">🦖</div>
           <div>
             <h1 className="text-xl font-bold text-gray-900 tracking-tight">Sinigeng Hatian</h1>
             {isSyncing && <p className="text-[8px] font-bold text-indigo-500 uppercase">Syncing...</p>}
@@ -246,7 +393,25 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-2">
-           <button onClick={() => setIsFriendModalOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-full transition-colors"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13.481 4.017a4 4 0 014.168 5.608" /></svg></button>
+           {currentUser?.role === 'admin' && (
+             <button onClick={() => setIsFriendModalOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-full transition-colors">
+               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13.481 4.017a4 4 0 014.168 5.608" /></svg>
+             </button>
+           )}
+           <div className="h-6 w-px bg-gray-200 mx-1"></div>
+           <div className="flex items-center space-x-2 bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-100">
+             <div className="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-[10px] font-bold text-white">
+               {currentUser.name.charAt(0).toUpperCase()}
+             </div>
+             <span className="text-xs font-black text-indigo-700 hidden xs:block">{currentUser.name}</span>
+             <button 
+               onClick={handleLogout}
+               className="ml-2 p-1 text-gray-400 hover:text-rose-500 transition-colors"
+               title="Logout"
+             >
+               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+             </button>
+           </div>
         </div>
       </nav>
 
@@ -377,19 +542,31 @@ const App: React.FC = () => {
                               <span className="font-bold text-gray-700 uppercase">{friends.find(f => f.id === exp.payerId)?.name} PAID</span>
                               <span>•</span>
                               <span>{new Date(exp.date).toLocaleDateString()}</span>
+                              {exp.createdBy && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-gray-400 italic">Added by {friends.find(f => f.id === exp.createdBy)?.name}</span>
+                                </>
+                              )}
+                              {exp.updatedBy && exp.updatedBy !== exp.createdBy && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-gray-400 italic">Updated by {friends.find(f => f.id === exp.updatedBy)?.name}</span>
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center space-x-4">
-                          <div className="text-right">
-                            <p className="font-bold text-lg text-gray-900">₱{exp.amount.toFixed(2)}</p>
-                            <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">{exp.splitType} split</p>
+                          <div className="flex items-center space-x-4">
+                            <div className="text-right">
+                              <p className="font-bold text-lg text-gray-900">₱{exp.amount.toFixed(2)}</p>
+                              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">{exp.splitType} split</p>
+                            </div>
+                            <div className="flex flex-col space-y-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                              <button onClick={(e) => { e.stopPropagation(); setEditingExpense(exp); setIsExpenseModalOpen(true); }} className="p-1.5 bg-blue-50 text-blue-600 rounded-lg"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></button>
+                              <button onClick={(e) => { e.stopPropagation(); deleteExpense(exp.id); }} className="p-1.5 bg-rose-50 text-rose-600 rounded-lg"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                            </div>
                           </div>
-                          <div className="flex flex-col space-y-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={(e) => { e.stopPropagation(); setEditingExpense(exp); setIsExpenseModalOpen(true); }} className="p-1.5 bg-blue-50 text-blue-600 rounded-lg"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></button>
-                            <button onClick={(e) => { e.stopPropagation(); deleteExpense(exp.id); }} className="p-1.5 bg-rose-50 text-rose-600 rounded-lg"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
-                          </div>
-                        </div>
                       </div>
                       {expandedExpenseId === exp.id && (
                         <div className="px-14 pb-4 pt-1 space-y-4 border-t border-gray-50 bg-gray-50/30">
@@ -403,7 +580,12 @@ const App: React.FC = () => {
                                     <span className="font-bold">{f?.name}</span>
                                     <span className="opacity-60">₱{s.amount.toFixed(2)}</span>
                                     {s.isPaid ? (
-                                      <svg className="w-3.5 h-3.5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg>
+                                      <div className="flex items-center space-x-1">
+                                        <svg className="w-3.5 h-3.5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg>
+                                        {s.paidBy && (
+                                          <span className="text-[8px] font-bold text-emerald-600 uppercase">by {friends.find(fr => fr.id === s.paidBy)?.name}</span>
+                                        )}
+                                      </div>
                                     ) : (
                                       <div className="w-3.5 h-3.5 border rounded-full border-gray-300" />
                                     )}
@@ -413,31 +595,55 @@ const App: React.FC = () => {
                             </div>
                           </div>
 
-                          {(exp.notes || exp.proofOfPayment) && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
-                              {exp.notes && (
-                                <div className="space-y-1">
-                                  <p className="text-[10px] font-bold text-gray-400 uppercase">Notes</p>
-                                  <p className="text-xs text-gray-600 italic">"{exp.notes}"</p>
-                                </div>
-                              )}
-                              {exp.proofOfPayment && exp.proofOfPayment.length > 0 && (
-                                <div className="space-y-1">
-                                  <p className="text-[10px] font-bold text-gray-400 uppercase">Proof of Payment</p>
-                                  <div className="flex flex-wrap gap-2">
-                                    {exp.proofOfPayment.map((img, idx) => (
-                                      <img 
-                                        key={idx} 
-                                        src={img} 
-                                        alt={`Proof ${idx + 1}`} 
-                                        className="w-16 h-16 object-cover rounded-lg border bg-white cursor-zoom-in hover:scale-105 transition-transform" 
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setCarouselImages(exp.proofOfPayment || []);
-                                          setCarouselInitialIndex(idx);
-                                          setIsCarouselOpen(true);
-                                        }}
-                                      />
+                          {(exp.notes || exp.proofOfPayment || (exp.history && exp.history.length > 0)) && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4 border-t border-gray-100">
+                              <div className="space-y-4">
+                                {exp.notes && (
+                                  <div className="space-y-1">
+                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Notes</p>
+                                    <p className="text-xs text-gray-600 italic leading-relaxed">"{exp.notes}"</p>
+                                  </div>
+                                )}
+                                {exp.proofOfPayment && exp.proofOfPayment.length > 0 && (
+                                  <div className="space-y-2">
+                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Attachments</p>
+                                    <div className="flex flex-wrap gap-2">
+                                      {exp.proofOfPayment.map((img, idx) => (
+                                        <div 
+                                          key={idx} 
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setCarouselImages(exp.proofOfPayment || []);
+                                            setCarouselInitialIndex(idx);
+                                            setIsCarouselOpen(true);
+                                          }}
+                                          className="w-12 h-12 rounded-lg overflow-hidden border border-gray-200 cursor-zoom-in hover:border-indigo-400 transition-colors"
+                                        >
+                                          <img src={img} alt="Proof" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {exp.history && exp.history.length > 0 && (
+                                <div className="space-y-2">
+                                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Audit Trail History</p>
+                                  <div className="bg-gray-50/50 rounded-2xl p-3 border border-gray-100 space-y-3 max-h-40 overflow-y-auto custom-scrollbar">
+                                    {exp.history.slice().reverse().map((log) => (
+                                      <div key={log.id} className="flex items-start space-x-2 text-[10px]">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1 flex-shrink-0" />
+                                        <div className="flex-1">
+                                          <p className="text-gray-700 leading-tight">
+                                            <span className="font-bold">{friends.find(f => f.id === log.userId)?.name}</span>
+                                            {" "}{log.action}
+                                          </p>
+                                          <p className="text-gray-400 font-medium mt-0.5">
+                                            {new Date(log.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                                          </p>
+                                        </div>
+                                      </div>
                                     ))}
                                   </div>
                                 </div>
@@ -561,6 +767,28 @@ const App: React.FC = () => {
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
                     </button>
                   </div>
+                ) : resettingPinId === f.id ? (
+                  <div className="flex-1 flex items-center space-x-2">
+                    <div className="flex-1 flex flex-col">
+                      <span className="text-[10px] font-bold text-amber-600 uppercase mb-1">New 4-digit PIN for {f.name}</span>
+                      <input 
+                        autoFocus
+                        type="password" 
+                        maxLength={4}
+                        placeholder="••••"
+                        value={newPinBuffer} 
+                        onChange={e => setNewPinBuffer(e.target.value.replace(/\D/g, ''))}
+                        onKeyDown={e => e.key === 'Enter' && updateFriendPin(f.id, newPinBuffer)}
+                        className="w-full bg-white border border-amber-200 rounded-lg px-2 py-1 text-sm font-black tracking-widest text-gray-900 focus:ring-2 focus:ring-amber-500 outline-none"
+                      />
+                    </div>
+                    <button onClick={() => updateFriendPin(f.id, newPinBuffer)} className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg self-end">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>
+                    </button>
+                    <button onClick={() => setResettingPinId(null)} className="p-2 text-gray-400 hover:bg-gray-200 rounded-lg self-end">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                  </div>
                 ) : (
                   <>
                     <span className="font-bold text-gray-800">{f.name}</span>
@@ -569,12 +797,26 @@ const App: React.FC = () => {
                         onClick={() => {
                           setEditingFriendId(f.id);
                           setFriendNameBuffer(f.name);
+                          setResettingPinId(null);
                         }} 
                         className="p-2 text-indigo-600 hover:bg-indigo-100 rounded-lg"
                         title="Edit name"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                       </button>
+                      {currentUser?.role === 'admin' && (
+                        <button 
+                          onClick={() => {
+                            setResettingPinId(f.id);
+                            setNewPinBuffer('');
+                            setEditingFriendId(null);
+                          }} 
+                          className="p-2 text-amber-600 hover:bg-amber-100 rounded-lg"
+                          title="Reset PIN"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+                        </button>
+                      )}
                       <button 
                         onClick={() => deleteFriend(f.id)} 
                         className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg"
