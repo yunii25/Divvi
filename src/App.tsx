@@ -438,7 +438,7 @@ const App: React.FC = () => {
                     <button onClick={() => setIsFriendModalOpen(true)} className="mt-4 px-6 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-bold">Add Friends</button>
                   </div>
                 )}
-                {balances.map(b => {
+                {balances.map((b: Balance) => {
                   const friend = friends.find(f => f.id === b.friendId);
                   return (
                     <div key={b.friendId} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 relative group overflow-hidden">
@@ -477,7 +477,7 @@ const App: React.FC = () => {
                   <span className="text-[10px] font-bold bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full uppercase">Direct Transfers</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {settlements.map((s, idx) => {
+                  {settlements.map((s: Settlement, idx: number) => {
                     const fromFriend = friends.find(f => f.id === s.fromId);
                     const toFriend = friends.find(f => f.id === s.toId);
                     return (
@@ -708,7 +708,7 @@ const App: React.FC = () => {
                   <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center space-x-2"><div className="w-1.5 h-6 bg-emerald-500 rounded-full" /><span>Settlement Plan</span></h3>
                   {settlements.length > 0 ? (
                     <div className="space-y-4">
-                      {settlements.map((s, idx) => {
+                      {settlements.map((s: Settlement, idx: number) => {
                         const fromFriend = friends.find(f => f.id === s.fromId);
                         const toFriend = friends.find(f => f.id === s.toId);
                         return (
