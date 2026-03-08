@@ -18,12 +18,24 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (selectedFriend && inputRef.current) {
-      inputRef.current.focus();
+    if (selectedFriend) {
+      if (!selectedFriend.pin) {
+        setIsSettingPin(true);
+      } else {
+        setIsSettingPin(false);
+      }
+      setIsConfirmingPin(false);
+      setPin('');
+      setError('');
+      
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
     }
   }, [selectedFriend]);
 
-  const handleLogin = () => {
+  const handleLogin = (pinToUse?: string) => {
+    const currentPin = pinToUse !== undefined ? pinToUse : pin;
     if (!selectedFriend) return;
     
     // If friend has no PIN, they MUST set one first
@@ -34,7 +46,7 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
       return;
     }
 
-    if (pin === selectedFriend.pin) {
+    if (currentPin === selectedFriend.pin) {
       onLogin(selectedFriend);
     } else {
       setError('Incorrect PIN');
@@ -43,12 +55,12 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
     }
   };
 
-  const handleSetPin = () => {
-    if (!selectedFriend || pin.length !== 4) return;
+  const handleSetPin = (pinToUse?: string) => {
+    const currentPin = pinToUse !== undefined ? pinToUse : pin;
+    if (!selectedFriend || currentPin.length !== 4) return;
     setIsConfirmingPin(true);
-    setConfirmPin('');
+    setConfirmPin(currentPin);
     setError('');
-    // Focus will stay on the same input, we just clear the buffer for confirmation
     setPin(''); 
   };
 
@@ -117,6 +129,7 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
                   setPin('');
                   setError('');
                   setIsSettingPin(false);
+                  setIsConfirmingPin(false);
                 }}
                 className="text-sm text-indigo-600 font-medium hover:underline"
               >
@@ -179,14 +192,10 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
                       setTimeout(() => handleConfirmPin(val), 100);
                     } else if (isSettingPin) {
                       // Store the first PIN and move to confirmation
-                      setConfirmPin(val);
-                      setTimeout(() => {
-                        setIsConfirmingPin(true);
-                        setPin('');
-                      }, 100);
+                      setTimeout(() => handleSetPin(val), 100);
                     } else {
                       // Normal login
-                      setTimeout(() => handleLogin(), 100);
+                      setTimeout(() => handleLogin(val), 100);
                     }
                   }
                 }}
