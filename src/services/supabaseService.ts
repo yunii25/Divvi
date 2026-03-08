@@ -79,12 +79,64 @@ function mapExpenseToDB(expense: any) {
 function mapExpenseFromDB(dbExpense: any) {
   if (!dbExpense) return null;
   const mapped: any = { ...dbExpense };
+  
+  // Handle snake_case to camelCase mapping
   if (dbExpense.payer_id !== undefined) { mapped.payerId = dbExpense.payer_id; delete mapped.payer_id; }
   if (dbExpense.split_type !== undefined) { mapped.splitType = dbExpense.split_type; delete mapped.split_type; }
-  if (dbExpense.proof_of_payment !== undefined) { mapped.proofOfPayment = dbExpense.proof_of_payment; delete mapped.proof_of_payment; }
   if (dbExpense.created_by !== undefined) { mapped.createdBy = dbExpense.created_by; delete mapped.created_by; }
   if (dbExpense.created_at !== undefined) { mapped.createdAt = dbExpense.created_at; delete mapped.created_at; }
   if (dbExpense.updated_by !== undefined) { mapped.updatedBy = dbExpense.updated_by; delete mapped.updated_by; }
   if (dbExpense.updated_at !== undefined) { mapped.updatedAt = dbExpense.updated_at; delete mapped.updated_at; }
+
+  // Ensure proofOfPayment is an array
+  if (dbExpense.proof_of_payment !== undefined) {
+    let proof = dbExpense.proof_of_payment;
+    if (typeof proof === 'string') {
+      try {
+        const parsed = JSON.parse(proof);
+        mapped.proofOfPayment = Array.isArray(parsed) ? parsed : [proof];
+      } catch (e) {
+        mapped.proofOfPayment = [proof];
+      }
+    } else {
+      mapped.proofOfPayment = Array.isArray(proof) ? proof : (proof ? [proof] : []);
+    }
+    delete mapped.proof_of_payment;
+  } else {
+    mapped.proofOfPayment = [];
+  }
+
+  // Ensure splits is an array
+  if (dbExpense.splits !== undefined) {
+    if (typeof dbExpense.splits === 'string') {
+      try {
+        const parsed = JSON.parse(dbExpense.splits);
+        mapped.splits = Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        mapped.splits = [];
+      }
+    } else {
+      mapped.splits = Array.isArray(dbExpense.splits) ? dbExpense.splits : [];
+    }
+  } else {
+    mapped.splits = [];
+  }
+
+  // Ensure history is an array
+  if (dbExpense.history !== undefined) {
+    if (typeof dbExpense.history === 'string') {
+      try {
+        const parsed = JSON.parse(dbExpense.history);
+        mapped.history = Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        mapped.history = [];
+      }
+    } else {
+      mapped.history = Array.isArray(dbExpense.history) ? dbExpense.history : [];
+    }
+  } else {
+    mapped.history = [];
+  }
+
   return mapped;
 }
