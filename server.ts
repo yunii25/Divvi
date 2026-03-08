@@ -15,6 +15,10 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
+  app.get("/api/test", (req: Request, res: Response) => {
+    res.send("Server is alive!");
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
