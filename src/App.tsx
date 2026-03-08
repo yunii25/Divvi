@@ -738,18 +738,13 @@ const App: React.FC = () => {
       </main>
 
       <footer className="max-w-4xl mx-auto px-4 py-12 border-t border-gray-100 mt-12">
-        <div className="flex flex-col items-center space-y-4 text-center">
-          <div className="flex items-center space-x-2 text-gray-400">
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 4.946-2.56 9.29-6.433 11.717A11.99 11.99 0 0110 19.056c-1.336 0-2.603-.218-3.784-.622-3.873-2.427-6.433-6.77-6.433-11.717 0-.68.056-1.35.166-2.001zm8.334 1.5a1 1 0 10-2 0v4a1 1 0 00.293.707l2 2a1 1 0 001.414-1.414L10.5 10.086V6.499z" clipRule="evenodd" /></svg>
-            <span className="text-[10px] font-bold uppercase tracking-widest">Secure & Private</span>
-          </div>
-          <p className="text-[10px] text-gray-400 max-w-xs leading-relaxed">
-            Sinigeng Hatian is a private utility app. If you see security warnings from your ISP (e.g. NTC/PAGCOR), it is likely a false positive due to shared hosting domains. This app does not host gambling or scams.
-          </p>
-          <div className="flex space-x-4">
+        <div className="flex flex-col items-center space-y-2 text-center">
+          <div className="flex items-center space-x-3">
+            <span className="text-[10px] font-bold text-slate-400">© 2026</span>
+            <span className="text-[10px] font-bold text-slate-300">•</span>
             <span className="text-[10px] font-bold text-indigo-400">v1.2.0</span>
-            <span className="text-[10px] font-bold text-gray-300">•</span>
-            <span className="text-[10px] font-bold text-indigo-400">Supabase Secured</span>
+            <span className="text-[10px] font-bold text-slate-300">•</span>
+            <span className="text-[10px] font-bold text-emerald-500">Supabase Secured</span>
           </div>
         </div>
       </footer>

@@ -11,8 +11,10 @@ interface LoginProps {
 const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
   const [pin, setPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
   const [error, setError] = useState('');
   const [isSettingPin, setIsSettingPin] = useState(false);
+  const [isConfirmingPin, setIsConfirmingPin] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -24,8 +26,11 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
   const handleLogin = () => {
     if (!selectedFriend) return;
     
+    // If friend has no PIN, they MUST set one first
     if (!selectedFriend.pin) {
       setIsSettingPin(true);
+      setPin('');
+      setError('');
       return;
     }
 
@@ -38,13 +43,31 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
     }
   };
 
-  const handleSetPin = async () => {
+  const handleSetPin = () => {
     if (!selectedFriend || pin.length !== 4) return;
+    setIsConfirmingPin(true);
+    setConfirmPin('');
+    setError('');
+    // Focus will stay on the same input, we just clear the buffer for confirmation
+    setPin(''); 
+  };
+
+  const handleConfirmPin = async (confirmedPin: string) => {
+    if (!selectedFriend || !isSettingPin) return;
+    
+    if (confirmedPin !== confirmPin) {
+      setError('PINs do not match. Try again.');
+      setIsConfirmingPin(false);
+      setPin('');
+      setConfirmPin('');
+      return;
+    }
+
     try {
-      await onUpdatePin(selectedFriend.id, pin);
-      onLogin({ ...selectedFriend, pin });
+      await onUpdatePin(selectedFriend.id, confirmedPin);
+      onLogin({ ...selectedFriend, pin: confirmedPin });
     } catch (err) {
-      setError('Failed to set PIN');
+      setError('Failed to save PIN');
     }
   };
 
@@ -61,15 +84,6 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
           </div>
           <h1 className="text-2xl font-bold text-slate-900">Welcome to Sinigeng Hatian</h1>
           <p className="text-slate-500 mt-2">Select your profile to continue</p>
-        </div>
-
-        <div className="mb-6 p-3 bg-emerald-50 border border-emerald-100 rounded-xl flex items-start gap-3">
-          <div className="mt-0.5 text-emerald-600">
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 4.946-2.56 9.29-6.433 11.717A11.99 11.99 0 0110 19.056c-1.336 0-2.603-.218-3.784-.622-3.873-2.427-6.433-6.77-6.433-11.717 0-.68.056-1.35.166-2.001zm8.334 1.5a1 1 0 10-2 0v4a1 1 0 00.293.707l2 2a1 1 0 001.414-1.414L10.5 10.086V6.499z" clipRule="evenodd" /></svg>
-          </div>
-          <div className="text-[10px] text-emerald-800 leading-tight">
-            <span className="font-bold">Secure Access:</span> This is a private bill-splitting app. Your data is encrypted and stored securely via Supabase.
-          </div>
         </div>
 
         {!selectedFriend ? (
@@ -113,7 +127,11 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
             <div className="space-y-2 relative">
               <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
                 <KeyRound size={16} />
-                {isSettingPin ? 'Set your 4-digit PIN' : 'Enter your 4-digit PIN'}
+                {isConfirmingPin 
+                  ? 'Confirm your 4-digit PIN' 
+                  : isSettingPin 
+                    ? 'Set your new 4-digit PIN' 
+                    : 'Enter your 4-digit PIN'}
               </label>
               <div 
                 className="flex gap-3 justify-center cursor-pointer relative z-10"
@@ -141,7 +159,13 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
                 value={pin}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && pin.length === 4) {
-                    isSettingPin ? handleSetPin() : handleLogin();
+                    if (isConfirmingPin) {
+                      handleConfirmPin(pin);
+                    } else if (isSettingPin) {
+                      handleSetPin();
+                    } else {
+                      handleLogin();
+                    }
                   }
                 }}
                 onChange={(e) => {
@@ -149,9 +173,24 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
                   setPin(val);
                   if (val.length === 4) {
                     setError('');
+                    // Auto-advance
+                    if (isConfirmingPin) {
+                      // We need to capture the value because state update is async
+                      setTimeout(() => handleConfirmPin(val), 100);
+                    } else if (isSettingPin) {
+                      // Store the first PIN and move to confirmation
+                      setConfirmPin(val);
+                      setTimeout(() => {
+                        setIsConfirmingPin(true);
+                        setPin('');
+                      }, 100);
+                    } else {
+                      // Normal login
+                      setTimeout(() => handleLogin(), 100);
+                    }
                   }
                 }}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-default"
+                className="absolute inset-0 w-full h-full opacity-0 caret-transparent text-transparent bg-transparent outline-none cursor-default select-none z-20"
                 autoFocus
               />
             </div>
@@ -161,11 +200,19 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
             )}
 
             <button
-              onClick={isSettingPin ? handleSetPin : handleLogin}
+              onClick={() => {
+                if (isConfirmingPin) {
+                  handleConfirmPin(pin);
+                } else if (isSettingPin) {
+                  handleSetPin();
+                } else {
+                  handleLogin();
+                }
+              }}
               disabled={pin.length !== 4}
               className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 disabled:opacity-50 disabled:shadow-none transition-all"
             >
-              {isSettingPin ? 'Set PIN & Login' : 'Login'}
+              {isConfirmingPin ? 'Confirm PIN' : isSettingPin ? 'Next' : 'Login'}
             </button>
           </div>
         )}
