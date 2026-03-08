@@ -125,41 +125,41 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-gray-700">Description</label>
+        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Description</label>
         <input
           type="text"
           value={description}
           onChange={e => setDescription(e.target.value)}
-          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white text-gray-900 placeholder-gray-400"
+          className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm p-2.5 border bg-white text-gray-900 placeholder-gray-400"
           placeholder="Lunch, Groceries, etc."
           required
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm font-medium text-gray-700">Amount</label>
-          <div className="mt-1 relative rounded-md shadow-sm">
+          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Amount</label>
+          <div className="relative rounded-xl shadow-sm">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <span className="text-gray-500 sm:text-sm">₱</span>
+              <span className="text-gray-500 text-sm">₱</span>
             </div>
             <input
               type="number"
               step="0.01"
               value={amount}
               onChange={e => setAmount(e.target.value)}
-              className="block w-full pl-7 pr-4 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white text-gray-900"
+              className="block w-full pl-7 pr-4 rounded-xl border-gray-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm p-2.5 border bg-white text-gray-900"
               placeholder="0.00"
               required
             />
           </div>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700">Paid By</label>
+          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Paid By</label>
           <select
             value={payerId}
             onChange={e => setPayerId(e.target.value)}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white text-gray-900"
+            className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm p-2.5 border bg-white text-gray-900"
           >
             {friends.map(f => (
               <option key={f.id} value={f.id} className="text-gray-900">{f.name}</option>
@@ -168,70 +168,75 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
         </div>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700">Date</label>
-        <input
-          type="date"
-          value={date}
-          onChange={e => setDate(e.target.value)}
-          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white text-gray-900"
-          required
-        />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Date</label>
+          <input
+            type="date"
+            value={date}
+            onChange={e => setDate(e.target.value)}
+            className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm p-2.5 border bg-white text-gray-900"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Split Method</label>
+          <select
+            value={splitType}
+            onChange={e => setSplitType(e.target.value as 'equal' | 'custom')}
+            className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm p-2.5 border bg-white text-gray-900"
+          >
+            <option value="equal" className="text-gray-900">Equally</option>
+            <option value="custom" className="text-gray-900">Custom Amounts</option>
+          </select>
+        </div>
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">How to Split?</label>
-        <select
-          value={splitType}
-          onChange={e => setSplitType(e.target.value as 'equal' | 'custom')}
-          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white text-gray-900"
-        >
-          <option value="equal" className="text-gray-900">Equally</option>
-          <option value="custom" className="text-gray-900">Custom Amounts</option>
-        </select>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Split Details:</label>
-        <div className="space-y-2 border rounded-xl p-3 bg-gray-50">
+        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Split Details</label>
+        <div className="space-y-1.5 border border-gray-100/50 rounded-2xl p-3 bg-gray-50/50">
           {friends.map(f => (
             <div key={f.id} className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-2">
                 <input 
                   type="checkbox" 
                   checked={selectedFriendIds.includes(f.id)}
                   onChange={() => toggleFriendSelection(f.id)}
                   className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 bg-white"
                 />
-                <span className={`text-sm ${selectedFriendIds.includes(f.id) ? 'text-gray-900 font-medium' : 'text-gray-400'}`}>
-                  {f.name} {f.id === payerId && <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1 rounded ml-1">PAYER</span>}
+                <span className={`text-xs ${selectedFriendIds.includes(f.id) ? 'text-gray-900 font-bold' : 'text-gray-400 font-medium'}`}>
+                  {f.name} {f.id === payerId && <span className="text-[8px] bg-indigo-100 text-indigo-600 px-1 rounded ml-1">PAYER</span>}
                 </span>
               </div>
               
               {selectedFriendIds.includes(f.id) && (
-                <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
                   {splitType === 'custom' && (
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={customSplits[f.id] || ''}
-                      onChange={e => setCustomSplits({...customSplits, [f.id]: e.target.value})}
-                      className="w-20 p-1 text-xs border rounded bg-white text-gray-900"
-                      placeholder="Amount"
-                    />
+                    <div className="relative">
+                      <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">₱</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={customSplits[f.id] || ''}
+                        onChange={e => setCustomSplits({...customSplits, [f.id]: e.target.value})}
+                        className="w-16 pl-4 pr-1 py-1 text-[10px] border border-gray-200 rounded-lg bg-white text-gray-900 font-bold"
+                        placeholder="0.00"
+                      />
+                    </div>
                   )}
                   <button
                     type="button"
                     disabled={f.id === payerId}
                     onClick={() => togglePaidStatus(f.id)}
-                    className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[10px] font-bold transition-colors ${
+                    className={`flex items-center space-x-1 px-2 py-1 rounded-lg text-[9px] font-black transition-all ${
                       f.id === payerId || paidFriendIds.includes(f.id)
                         ? 'bg-emerald-100 text-emerald-700'
                         : 'bg-amber-100 text-amber-700'
-                    } ${f.id === payerId ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    } ${f.id === payerId ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 active:scale-95'}`}
                   >
                     {f.id === payerId || paidFriendIds.includes(f.id) ? (
-                      <><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg><span>Settled</span></>
+                      <><svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg><span>Settled</span></>
                     ) : (
                       <span>Unpaid</span>
                     )}
@@ -242,44 +247,47 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
           ))}
         </div>
         {splitType === 'custom' && (
-           <div className="text-right text-xs text-gray-500 mt-1">
+           <div className="text-right text-[10px] font-bold text-gray-400 mt-1">
              Sum: ₱{(Object.values(customSplits) as string[]).reduce((sum: number, val: string) => sum + (parseFloat(val) || 0), 0).toFixed(2)} / {amount ? `₱${parseFloat(amount).toFixed(2)}` : '₱0.00'}
            </div>
         )}
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700">Notes</label>
+        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Notes</label>
         <textarea
           value={notes}
           onChange={e => setNotes(e.target.value)}
-          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white text-gray-900 placeholder-gray-400"
+          className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm p-2.5 border bg-white text-gray-900 placeholder-gray-400"
           placeholder="Add extra details..."
-          rows={2}
+          rows={1}
         />
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700">Proof of Payment</label>
-        <div className="mt-1 space-y-3">
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handleFileChange}
-            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-          />
+        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Proof of Payment</label>
+        <div className="mt-1 flex items-center space-x-4">
+          <label className="cursor-pointer bg-indigo-50 text-indigo-700 px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-100 transition-colors border border-indigo-100">
+            <span>Upload Images</span>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleFileChange}
+              className="hidden"
+            />
+          </label>
           {proofOfPayment.length > 0 && (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1.5 flex-1">
               {proofOfPayment.map((file, idx) => (
-                <div key={idx} className="relative w-16 h-16 rounded-lg overflow-hidden border">
+                <div key={idx} className="relative w-10 h-10 rounded-lg overflow-hidden border border-gray-200">
                   <img src={file} alt={`Proof ${idx + 1}`} className="w-full h-full object-cover" />
                   <button 
                     type="button" 
                     onClick={() => removeFile(idx)}
                     className="absolute top-0 right-0 bg-rose-500 text-white p-0.5 rounded-bl-lg"
                   >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    <svg className="w-2 h-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12" /></svg>
                   </button>
                 </div>
               ))}
@@ -289,7 +297,7 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
       </div>
 
       <div className="flex space-x-3 pt-4">
-        <button type="button" onClick={onCancel} className="flex-1 py-2 text-gray-700 border rounded-lg hover:bg-gray-50 text-sm font-medium">Cancel</button>
+        <button type="button" onClick={onCancel} className="flex-1 py-2 text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 text-sm font-medium">Cancel</button>
         <button type="submit" className="flex-1 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-semibold">
           {expense ? 'Save Changes' : 'Add Expense'}
         </button>

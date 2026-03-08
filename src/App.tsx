@@ -451,8 +451,8 @@ const App: React.FC = () => {
                           <p className={`text-xs font-semibold ${b.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{b.net >= 0 ? `+ ₱${b.net.toFixed(2)}` : `- ₱${Math.abs(b.net).toFixed(2)}`}</p>
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-2 border-t pt-3">
-                        <div className="text-center border-r border-gray-50">
+                      <div className="grid grid-cols-2 gap-2 border-t border-gray-100/50 pt-3">
+                        <div className="text-center border-r border-gray-100/50">
                           <p className="text-[8px] uppercase tracking-widest font-black text-gray-400">Credit</p>
                           <p className="text-xs font-bold text-emerald-600">₱{b.paid.toFixed(2)}</p>
                         </div>
@@ -527,18 +527,23 @@ const App: React.FC = () => {
                 </button>
               </div>
 
-              <div className="bg-white rounded-3xl shadow-sm border border-gray-100 divide-y divide-gray-50 overflow-hidden">
+              <div className="bg-white rounded-3xl shadow-sm border border-gray-100 divide-y divide-gray-100/50 overflow-hidden">
                 {expenses.length === 0 ? (
                   <div className="py-20 text-center text-gray-400">No expenses yet. Start splitting!</div>
                 ) : (
                   expenses.map(exp => (
                     <div key={exp.id} className={`transition-all ${exp.status === 'settled' ? 'bg-gray-50/50 opacity-60' : 'bg-white'}`}>
-                      <div className="p-4 flex items-center justify-between cursor-pointer group" onClick={() => setExpandedExpenseId(expandedExpenseId === exp.id ? null : exp.id)}>
-                        <div className="flex items-center space-x-4">
+                      <div className="p-4 flex items-center justify-between cursor-pointer group space-x-4" onClick={() => setExpandedExpenseId(expandedExpenseId === exp.id ? null : exp.id)}>
+                        <div className="flex items-center space-x-4 min-w-0 flex-1">
                           <button onClick={(e) => { e.stopPropagation(); toggleExpenseStatus(exp.id); }} className={`p-2 rounded-xl border transition-all ${exp.status === 'settled' ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-gray-200 text-gray-300 hover:border-emerald-500'}`}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg></button>
-                          <div>
-                            <h4 className={`font-bold transition-all ${exp.status === 'settled' ? 'line-through text-gray-400' : 'text-gray-900'}`}>{exp.description}</h4>
-                            <div className="flex items-center space-x-2 text-[10px] text-gray-500">
+                          <div className="min-w-0 flex-1">
+                            <h4 
+                              title={exp.description}
+                              className={`font-bold transition-all truncate ${exp.status === 'settled' ? 'line-through text-gray-400' : 'text-gray-900'}`}
+                            >
+                              {exp.description}
+                            </h4>
+                            <div className="flex items-center space-x-2 text-[10px] text-gray-500 truncate">
                               <span className="font-bold text-gray-700 uppercase">{friends.find(f => f.id === exp.payerId)?.name} PAID</span>
                               <span>•</span>
                               <span>{new Date(exp.date).toLocaleDateString()}</span>
@@ -569,7 +574,7 @@ const App: React.FC = () => {
                           </div>
                       </div>
                       {expandedExpenseId === exp.id && (
-                        <div className="px-14 pb-4 pt-1 space-y-4 border-t border-gray-50 bg-gray-50/30">
+                        <div className="px-14 pb-4 pt-1 space-y-4 border-t border-gray-100/50 bg-gray-50/30">
                           <div>
                             <p className="text-[10px] font-bold text-gray-400 uppercase mb-2">Individual Split Tracking</p>
                             <div className="flex flex-wrap gap-2">
@@ -596,7 +601,7 @@ const App: React.FC = () => {
                           </div>
 
                           {(exp.notes || exp.proofOfPayment || (exp.history && exp.history.length > 0)) && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4 border-t border-gray-100">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4 border-t border-gray-100/50">
                               <div className="space-y-4">
                                 {exp.notes && (
                                   <div className="space-y-1">
