@@ -59,8 +59,17 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
           <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-200">
             <Lock className="text-white" size={32} />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">Welcome to Divvi</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Welcome to Sinigeng Hatian</h1>
           <p className="text-slate-500 mt-2">Select your profile to continue</p>
+        </div>
+
+        <div className="mb-6 p-3 bg-emerald-50 border border-emerald-100 rounded-xl flex items-start gap-3">
+          <div className="mt-0.5 text-emerald-600">
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 4.946-2.56 9.29-6.433 11.717A11.99 11.99 0 0110 19.056c-1.336 0-2.603-.218-3.784-.622-3.873-2.427-6.433-6.77-6.433-11.717 0-.68.056-1.35.166-2.001zm8.334 1.5a1 1 0 10-2 0v4a1 1 0 00.293.707l2 2a1 1 0 001.414-1.414L10.5 10.086V6.499z" clipRule="evenodd" /></svg>
+          </div>
+          <div className="text-[10px] text-emerald-800 leading-tight">
+            <span className="font-bold">Secure Access:</span> This is a private bill-splitting app. Your data is encrypted and stored securely via Supabase.
+          </div>
         </div>
 
         {!selectedFriend ? (

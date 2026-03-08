@@ -737,6 +737,23 @@ const App: React.FC = () => {
         )}
       </main>
 
+      <footer className="max-w-4xl mx-auto px-4 py-12 border-t border-gray-100 mt-12">
+        <div className="flex flex-col items-center space-y-4 text-center">
+          <div className="flex items-center space-x-2 text-gray-400">
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 4.946-2.56 9.29-6.433 11.717A11.99 11.99 0 0110 19.056c-1.336 0-2.603-.218-3.784-.622-3.873-2.427-6.433-6.77-6.433-11.717 0-.68.056-1.35.166-2.001zm8.334 1.5a1 1 0 10-2 0v4a1 1 0 00.293.707l2 2a1 1 0 001.414-1.414L10.5 10.086V6.499z" clipRule="evenodd" /></svg>
+            <span className="text-[10px] font-bold uppercase tracking-widest">Secure & Private</span>
+          </div>
+          <p className="text-[10px] text-gray-400 max-w-xs leading-relaxed">
+            Sinigeng Hatian is a private utility app. If you see security warnings from your ISP (e.g. NTC/PAGCOR), it is likely a false positive due to shared hosting domains. This app does not host gambling or scams.
+          </p>
+          <div className="flex space-x-4">
+            <span className="text-[10px] font-bold text-indigo-400">v1.2.0</span>
+            <span className="text-[10px] font-bold text-gray-300">•</span>
+            <span className="text-[10px] font-bold text-indigo-400">Supabase Secured</span>
+          </div>
+        </div>
+      </footer>
+
       <div className="fixed bottom-6 inset-x-0 flex justify-center z-50 px-4 pointer-events-none">
         <div className="glass px-6 py-3 rounded-2xl shadow-xl flex items-center space-x-8 border border-white/50 pointer-events-auto">
           <button onClick={() => setActiveTab('dashboard')} className={`transition-colors p-2 rounded-xl ${activeTab === 'dashboard' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400 hover:text-indigo-400'}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg></button>
