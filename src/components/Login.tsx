@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Friend } from '../types';
 import { Lock, User, KeyRound } from 'lucide-react';
 
@@ -13,6 +13,13 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [isSettingPin, setIsSettingPin] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (selectedFriend && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [selectedFriend]);
 
   const handleLogin = () => {
     if (!selectedFriend) return;
@@ -27,6 +34,7 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
     } else {
       setError('Incorrect PIN');
       setPin('');
+      inputRef.current?.focus();
     }
   };
 
@@ -38,6 +46,10 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
     } catch (err) {
       setError('Failed to set PIN');
     }
+  };
+
+  const focusInput = () => {
+    inputRef.current?.focus();
   };
 
   return (
@@ -89,12 +101,15 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
               </button>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 relative">
               <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
                 <KeyRound size={16} />
                 {isSettingPin ? 'Set your 4-digit PIN' : 'Enter your 4-digit PIN'}
               </label>
-              <div className="flex gap-3 justify-center">
+              <div 
+                className="flex gap-3 justify-center cursor-pointer relative z-10"
+                onClick={focusInput}
+              >
                 {[0, 1, 2, 3].map((i) => (
                   <div
                     key={i}
@@ -102,24 +117,32 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
                       pin.length > i 
                         ? 'border-indigo-600 bg-indigo-50 text-indigo-600' 
                         : 'border-slate-200 bg-white'
-                    }`}
+                    } ${pin.length === i ? 'ring-2 ring-indigo-200 border-indigo-400' : ''}`}
                   >
                     {pin.length > i ? '•' : ''}
                   </div>
                 ))}
               </div>
               <input
-                type="password"
+                ref={inputRef}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 maxLength={4}
                 value={pin}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && pin.length === 4) {
+                    isSettingPin ? handleSetPin() : handleLogin();
+                  }
+                }}
                 onChange={(e) => {
-                  const val = e.target.value.replace(/\D/g, '');
+                  const val = e.target.value.replace(/\D/g, '').slice(0, 4);
                   setPin(val);
                   if (val.length === 4) {
                     setError('');
                   }
                 }}
-                className="sr-only"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-default"
                 autoFocus
               />
             </div>
