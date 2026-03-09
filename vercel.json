@@ -3,7 +3,7 @@
   "redirects": [
     {
       "source": "/(.*)",
-      "destination": "https://your-new-site.netlify.app/$1",
+      "destination": "https://sinigeng-hatian.netlify.app/",
       "permanent": true
     }
   ]
