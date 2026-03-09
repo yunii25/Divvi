@@ -1,5 +1,9 @@
 {
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "destination": "https://sinigeng-hatian.netlify.app/",
+      "permanent": true
+    }
   ]
 }
