@@ -106,22 +106,34 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
                 onClick={() => setSelectedFriend(friend)}
                 className="flex flex-col items-center p-4 rounded-2xl border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/50 transition-all group"
               >
-                <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-3 group-hover:bg-indigo-100 transition-colors">
-                  <User className="text-slate-400 group-hover:text-indigo-600" size={24} />
+                <div className="w-16 h-16 rounded-full flex items-center justify-center mb-3 group-hover:scale-105 transition-all overflow-hidden border-2 border-transparent group-hover:border-indigo-200 shadow-sm">
+                  {friend.avatar ? (
+                    <img src={friend.avatar} alt={friend.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className="w-full h-full bg-slate-100 flex items-center justify-center group-hover:bg-indigo-100 transition-colors">
+                      <User className="text-slate-400 group-hover:text-indigo-600" size={28} />
+                    </div>
+                  )}
                 </div>
-                <span className="font-medium text-slate-700">{friend.name}</span>
+                <span className="font-bold text-slate-700 text-sm">{friend.name}</span>
               </button>
             ))}
           </div>
         ) : (
           <div className="space-y-6">
             <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
-              <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
-                <User className="text-indigo-600" size={20} />
+              <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white shadow-sm">
+                {selectedFriend.avatar ? (
+                  <img src={selectedFriend.avatar} alt={selectedFriend.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-full h-full bg-indigo-100 flex items-center justify-center">
+                    <User className="text-indigo-600" size={24} />
+                  </div>
+                )}
               </div>
               <div className="flex-1">
-                <p className="text-sm text-slate-500">Logging in as</p>
-                <p className="font-semibold text-slate-900">{selectedFriend.name}</p>
+                <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Logging in as</p>
+                <p className="font-bold text-slate-900">{selectedFriend.name}</p>
               </div>
               <button 
                 onClick={() => {

@@ -19,6 +19,7 @@ const App: React.FC = () => {
 
   const [isFriendModalOpen, setIsFriendModalOpen] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | undefined>(undefined);
   const [editingFriendId, setEditingFriendId] = useState<string | null>(null);
   const [friendNameBuffer, setFriendNameBuffer] = useState('');
@@ -26,6 +27,12 @@ const App: React.FC = () => {
   const [newPinBuffer, setNewPinBuffer] = useState('');
   const [newFriendName, setNewFriendName] = useState('');
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
+
+  const [profileAvatarBuffer, setProfileAvatarBuffer] = useState('');
+  const [profilePinBuffer, setProfilePinBuffer] = useState('');
+  const [profileConfirmPinBuffer, setProfileConfirmPinBuffer] = useState('');
+  const [profileError, setProfileError] = useState('');
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
 
   const [carouselImages, setCarouselImages] = useState<string[]>([]);
   const [carouselInitialIndex, setCarouselInitialIndex] = useState(0);
@@ -79,6 +86,50 @@ const App: React.FC = () => {
     localStorage.removeItem('sinigeng_user');
   };
 
+  const handleProfileUpdate = async () => {
+    if (!currentUser) return;
+    if (profilePinBuffer && profilePinBuffer.length !== 4) {
+      setProfileError('PIN must be 4 digits');
+      return;
+    }
+    if (profilePinBuffer && profilePinBuffer !== profileConfirmPinBuffer) {
+      setProfileError('PINs do not match');
+      return;
+    }
+
+    setIsUpdatingProfile(true);
+    setProfileError('');
+    try {
+      const updates: any = {};
+      if (profileAvatarBuffer) updates.avatar = profileAvatarBuffer;
+      if (profilePinBuffer) updates.pin = profilePinBuffer;
+
+      const updated = await db.updateFriend(currentUser.id, updates);
+      setCurrentUser(updated);
+      setFriends(friends.map(f => f.id === updated.id ? updated : f));
+      localStorage.setItem('sinigeng_user', JSON.stringify(updated));
+      setIsProfileModalOpen(false);
+      setProfilePinBuffer('');
+      setProfileConfirmPinBuffer('');
+      alert('Profile updated successfully!');
+    } catch (err) {
+      setProfileError('Failed to update profile');
+    } finally {
+      setIsUpdatingProfile(false);
+    }
+  };
+
+  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setProfileAvatarBuffer(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const balances = useMemo(() => calculateBalances(friends, expenses), [friends, expenses]);
   const settlements = useMemo(() => calculateSettlements(friends, expenses), [friends, expenses]);
 
@@ -86,6 +137,9 @@ const App: React.FC = () => {
   const totalStillOwed = useMemo(() => expenses.reduce((sum, e) => {
     return sum + e.splits.reduce((sSum, s) => !s.isPaid ? sSum + s.amount : sSum, 0);
   }, 0), [expenses]);
+
+  const userBalance = useMemo(() => balances.find(b => b.friendId === currentUser?.id), [balances, currentUser]);
+  const userSettlements = useMemo(() => settlements.filter(s => s.fromId === currentUser?.id || s.toId === currentUser?.id), [settlements, currentUser]);
 
   const analytics = useMemo(() => {
     let totalSpend = 0;
@@ -399,11 +453,27 @@ const App: React.FC = () => {
              </button>
            )}
            <div className="h-6 w-px bg-gray-200 mx-1"></div>
-           <div className="flex items-center space-x-2 bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-100">
-             <div className="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-[10px] font-bold text-white">
-               {currentUser.name.charAt(0).toUpperCase()}
+           <div className="flex items-center space-x-2 bg-indigo-50 pl-1 pr-3 py-1 rounded-xl border border-indigo-100 group">
+             <button 
+               onClick={() => {
+                 setProfileAvatarBuffer(currentUser.avatar || '');
+                 setProfilePinBuffer('');
+                 setProfileConfirmPinBuffer('');
+                 setProfileError('');
+                 setIsProfileModalOpen(true);
+               }}
+               className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-[10px] font-bold text-white overflow-hidden border-2 border-white shadow-sm hover:scale-105 transition-transform"
+             >
+               {currentUser.avatar ? (
+                 <img src={currentUser.avatar} alt={currentUser.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+               ) : (
+                 currentUser.name.charAt(0).toUpperCase()
+               )}
+             </button>
+             <div className="flex flex-col">
+               <span className="text-[10px] font-black text-indigo-700 leading-none hidden xs:block">{currentUser.name}</span>
+               <span className="text-[8px] font-bold text-indigo-400 uppercase leading-none hidden xs:block">{currentUser.role}</span>
              </div>
-             <span className="text-xs font-black text-indigo-700 hidden xs:block">{currentUser.name}</span>
              <button 
                onClick={handleLogout}
                className="ml-2 p-1 text-gray-400 hover:text-rose-500 transition-colors"
@@ -418,87 +488,117 @@ const App: React.FC = () => {
       <main className="max-w-4xl mx-auto px-4 mt-8 space-y-10">
         {activeTab === 'dashboard' ? (
           <>
-            <section className="grid grid-cols-2 gap-4">
+            <section className="grid grid-cols-3 gap-4">
               <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Paid Overall</p>
-                <p className="text-2xl font-black text-indigo-600">₱{totalPaidOverall.toLocaleString()}</p>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">My Total Paid</p>
+                <p className="text-2xl font-black text-indigo-600">₱{userBalance?.paid.toLocaleString() || '0'}</p>
               </div>
               <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Owed to Others</p>
-                <p className="text-2xl font-black text-rose-600">₱{totalStillOwed.toLocaleString()}</p>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">My Total Debt</p>
+                <p className="text-2xl font-black text-rose-600">₱{userBalance?.owed.toLocaleString() || '0'}</p>
+              </div>
+              <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Net Balance</p>
+                <p className={`text-2xl font-black ${(userBalance?.net || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  ₱{Math.abs(userBalance?.net || 0).toLocaleString()}
+                  <span className="text-[10px] ml-1">{(userBalance?.net || 0) >= 0 ? 'Credit' : 'Debt'}</span>
+                </p>
               </div>
             </section>
 
             <section className="space-y-4">
-              <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Balances</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {friends.length === 0 && (
-                  <div className="col-span-full py-12 text-center bg-white rounded-3xl border border-dashed border-gray-300">
-                    <p className="text-gray-500 font-medium">Add some friends to get started!</p>
-                    <button onClick={() => setIsFriendModalOpen(true)} className="mt-4 px-6 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-bold">Add Friends</button>
-                  </div>
-                )}
-                {balances.map((b: Balance) => {
-                  const friend = friends.find(f => f.id === b.friendId);
+              <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest">My Balances with Others</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {friends.filter(f => f.id !== currentUser?.id).map((friend) => {
+                  // Calculate balance specifically between currentUser and this friend
+                  let netWithFriend = 0;
+                  expenses.forEach(e => {
+                    if (e.payerId === currentUser?.id) {
+                      const split = e.splits.find(s => s.friendId === friend.id);
+                      if (split && !split.isPaid) netWithFriend += split.amount;
+                    } else if (e.payerId === friend.id) {
+                      const split = e.splits.find(s => s.friendId === currentUser?.id);
+                      if (split && !split.isPaid) netWithFriend -= split.amount;
+                    }
+                  });
+
+                  if (netWithFriend === 0) return null;
+
                   return (
-                    <div key={b.friendId} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 relative group overflow-hidden">
-                      <div className={`absolute top-0 left-0 w-1 h-full ${b.net >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                      <div className="flex items-center space-x-3 mb-4">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${b.net >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{friend?.name?.[0].toUpperCase() || '?'}</div>
+                    <div key={friend.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 relative group overflow-hidden">
+                      <div className={`absolute top-0 left-0 w-1 h-full ${netWithFriend >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                      <div className="flex items-center space-x-3">
+                        <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-slate-50 shadow-sm">
+                          {friend.avatar ? (
+                            <img src={friend.avatar} alt={friend.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          ) : (
+                            <div className={`w-full h-full flex items-center justify-center font-bold text-sm ${netWithFriend >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{friend.name[0].toUpperCase()}</div>
+                          )}
+                        </div>
                         <div className="flex-1">
-                          <h3 className="font-bold text-gray-900">{friend?.name}</h3>
-                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">Expected to Receive</p>
-                          <p className={`text-xs font-semibold ${b.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{b.net >= 0 ? `+ ₱${b.net.toFixed(2)}` : `- ₱${Math.abs(b.net).toFixed(2)}`}</p>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 border-t border-gray-100/50 pt-3">
-                        <div className="text-center border-r border-gray-100/50">
-                          <p className="text-[8px] uppercase tracking-widest font-black text-gray-400">Credit</p>
-                          <p className="text-xs font-bold text-emerald-600">₱{b.paid.toFixed(2)}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-[8px] uppercase tracking-widest font-black text-gray-400">Debt</p>
-                          <p className="text-xs font-bold text-rose-600">₱{b.owed.toFixed(2)}</p>
+                          <h3 className="font-bold text-gray-900">{friend.name}</h3>
+                          <p className={`text-sm font-black ${netWithFriend >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {netWithFriend >= 0 ? `Owes you ₱${netWithFriend.toFixed(2)}` : `You owe ₱${Math.abs(netWithFriend).toFixed(2)}`}
+                          </p>
                         </div>
                       </div>
                     </div>
                   );
                 })}
+                {friends.filter(f => f.id !== currentUser?.id).every(f => {
+                   let netWithFriend = 0;
+                   expenses.forEach(e => {
+                     if (e.payerId === currentUser?.id) {
+                       const split = e.splits.find(s => s.friendId === f.id);
+                       if (split && !split.isPaid) netWithFriend += split.amount;
+                     } else if (e.payerId === f.id) {
+                       const split = e.splits.find(s => s.friendId === currentUser?.id);
+                       if (split && !split.isPaid) netWithFriend -= split.amount;
+                     }
+                   });
+                   return netWithFriend === 0;
+                }) && (
+                  <div className="col-span-full py-8 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+                    <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">All settled up with everyone! 🎉</p>
+                  </div>
+                )}
               </div>
             </section>
 
-            {settlements.length > 0 && (
+            {userSettlements.length > 0 && (
               <section className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-500">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest flex items-center space-x-2">
                     <svg className="w-4 h-4 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" /></svg>
-                    <span>Settlement Report</span>
+                    <span>My Settlement Plan</span>
                   </h2>
-                  <span className="text-[10px] font-bold bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full uppercase">Direct Transfers</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {settlements.map((s: Settlement, idx: number) => {
+                  {userSettlements.map((s: Settlement, idx: number) => {
                     const fromFriend = friends.find(f => f.id === s.fromId);
                     const toFriend = friends.find(f => f.id === s.toId);
+                    const isMePaying = s.fromId === currentUser?.id;
                     return (
-                      <div key={idx} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between group hover:border-indigo-200 transition-colors">
+                      <div key={idx} className={`bg-white p-4 rounded-2xl shadow-sm border ${isMePaying ? 'border-rose-100 bg-rose-50/10' : 'border-emerald-100 bg-emerald-50/10'} flex items-center justify-between group transition-colors`}>
                         <div className="flex items-center space-x-3">
                           <div className="text-center">
-                            <div className="w-8 h-8 rounded-full bg-rose-50 flex items-center justify-center text-xs font-bold text-rose-600">{fromFriend?.name?.[0]}</div>
+                            <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-100 shadow-sm">
+                              {fromFriend?.avatar ? <img src={fromFriend.avatar} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <div className="w-full h-full bg-rose-50 flex items-center justify-center text-xs font-bold text-rose-600">{fromFriend?.name?.[0]}</div>}
+                            </div>
                             <p className="text-[9px] font-bold text-gray-400 uppercase mt-1 truncate w-12">{fromFriend?.name}</p>
                           </div>
                           <div className="flex flex-col items-center">
-                            <svg className="w-5 h-5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
-                            <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">Pays</span>
+                            <svg className={`w-5 h-5 ${isMePaying ? 'text-rose-300' : 'text-emerald-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
                           </div>
                           <div className="text-center">
-                            <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center text-xs font-bold text-emerald-600">{toFriend?.name?.[0]}</div>
+                            <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-100 shadow-sm">
+                              {toFriend?.avatar ? <img src={toFriend.avatar} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <div className="w-full h-full bg-emerald-50 flex items-center justify-center text-xs font-bold text-emerald-600">{toFriend?.name?.[0]}</div>}
+                            </div>
                             <p className="text-[9px] font-bold text-gray-400 uppercase mt-1 truncate w-12">{toFriend?.name}</p>
                           </div>
                         </div>
                         <div className="text-right pl-4 border-l border-gray-50">
-                          <p className="text-lg font-black text-gray-900 leading-tight">₱{s.amount.toFixed(2)}</p>
-                          <p className="text-[8px] font-bold text-emerald-500 uppercase tracking-widest">Settle Up</p>
+                          <p className={`text-lg font-black leading-tight ${isMePaying ? 'text-rose-600' : 'text-emerald-600'}`}>₱{s.amount.toFixed(2)}</p>
                         </div>
                       </div>
                     );
@@ -852,6 +952,74 @@ const App: React.FC = () => {
 
       <Modal isOpen={isExpenseModalOpen} onClose={() => { setIsExpenseModalOpen(false); setEditingExpense(undefined); }} title={editingExpense ? (editingExpense.id === 'new' ? "New Bill Preview" : "Edit Bill") : "New Bill"}>
         <ExpenseForm friends={friends} expense={editingExpense} onSubmit={handleExpenseSubmit} onCancel={() => setIsExpenseModalOpen(false)}/>
+      </Modal>
+
+      <Modal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} title="Profile Settings">
+        <div className="space-y-6">
+          <div className="flex flex-col items-center space-y-4">
+            <div className="relative group">
+              <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-indigo-50 shadow-lg">
+                {profileAvatarBuffer ? (
+                  <img src={profileAvatarBuffer} alt="Avatar Preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-full h-full bg-slate-100 flex items-center justify-center text-slate-400">
+                    <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                  </div>
+                )}
+              </div>
+              <label className="absolute bottom-0 right-0 bg-indigo-600 text-white p-2 rounded-full cursor-pointer shadow-md hover:bg-indigo-700 transition-colors">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                <input type="file" className="hidden" accept="image/*" onChange={handleAvatarUpload} />
+              </label>
+            </div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Profile Photo</p>
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Change PIN (Optional)</label>
+              <input 
+                type="password" 
+                maxLength={4}
+                placeholder="New 4-digit PIN"
+                value={profilePinBuffer}
+                onChange={(e) => setProfilePinBuffer(e.target.value.replace(/\D/g, ''))}
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-sm font-bold"
+              />
+            </div>
+            {profilePinBuffer && (
+              <div className="space-y-1 animate-in fade-in slide-in-from-top-2">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Confirm New PIN</label>
+                <input 
+                  type="password" 
+                  maxLength={4}
+                  placeholder="Confirm PIN"
+                  value={profileConfirmPinBuffer}
+                  onChange={(e) => setProfileConfirmPinBuffer(e.target.value.replace(/\D/g, ''))}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-sm font-bold"
+                />
+              </div>
+            )}
+          </div>
+
+          {profileError && <p className="text-xs font-bold text-rose-500 text-center">{profileError}</p>}
+
+          <div className="flex gap-3 pt-4">
+            <button 
+              onClick={() => setIsProfileModalOpen(false)}
+              className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-2xl font-bold text-sm hover:bg-slate-200 transition-colors"
+            >
+              Cancel
+            </button>
+            <button 
+              onClick={handleProfileUpdate}
+              disabled={isUpdatingProfile}
+              className="flex-2 py-3 bg-indigo-600 text-white rounded-2xl font-bold text-sm shadow-lg shadow-indigo-100 hover:bg-indigo-700 disabled:opacity-50 transition-all"
+            >
+              {isUpdatingProfile ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </div>
       </Modal>
 
       <ImageCarousel 
