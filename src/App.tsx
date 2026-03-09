@@ -496,18 +496,18 @@ const App: React.FC = () => {
       <main className="max-w-4xl mx-auto px-4 mt-8 space-y-10">
         {activeTab === 'dashboard' ? (
           <>
-            <section className="grid grid-cols-3 gap-4">
-              <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
+            <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-white p-4 sm:p-5 rounded-3xl shadow-sm border border-gray-100">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">My Total Paid</p>
-                <p className="text-2xl font-black text-indigo-600">₱{userBalance?.paid.toLocaleString() || '0'}</p>
+                <p className="text-xl sm:text-2xl font-black text-indigo-600 truncate">₱{userBalance?.paid.toLocaleString() || '0'}</p>
               </div>
-              <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
+              <div className="bg-white p-4 sm:p-5 rounded-3xl shadow-sm border border-gray-100">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">My Total Debt</p>
-                <p className="text-2xl font-black text-rose-600">₱{userBalance?.owed.toLocaleString() || '0'}</p>
+                <p className="text-xl sm:text-2xl font-black text-rose-600 truncate">₱{userBalance?.owed.toLocaleString() || '0'}</p>
               </div>
-              <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
+              <div className="bg-white p-4 sm:p-5 rounded-3xl shadow-sm border border-gray-100">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Net Balance</p>
-                <p className={`text-2xl font-black ${(userBalance?.net || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                <p className={`text-xl sm:text-2xl font-black truncate ${(userBalance?.net || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                   ₱{Math.abs(userBalance?.net || 0).toLocaleString()}
                   <span className="text-[10px] ml-1">{(userBalance?.net || 0) >= 0 ? 'Credit' : 'Debt'}</span>
                 </p>
