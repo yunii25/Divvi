@@ -29,6 +29,7 @@ const App: React.FC = () => {
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
 
   const [profileAvatarBuffer, setProfileAvatarBuffer] = useState('');
+  const [profileNameBuffer, setProfileNameBuffer] = useState('');
   const [profilePinBuffer, setProfilePinBuffer] = useState('');
   const [profileConfirmPinBuffer, setProfileConfirmPinBuffer] = useState('');
   const [profileError, setProfileError] = useState('');
@@ -88,6 +89,10 @@ const App: React.FC = () => {
 
   const handleProfileUpdate = async () => {
     if (!currentUser) return;
+    if (!profileNameBuffer.trim()) {
+      setProfileError('Name cannot be empty');
+      return;
+    }
     if (profilePinBuffer && profilePinBuffer.length !== 4) {
       setProfileError('PIN must be 4 digits');
       return;
@@ -100,7 +105,9 @@ const App: React.FC = () => {
     setIsUpdatingProfile(true);
     setProfileError('');
     try {
-      const updates: any = {};
+      const updates: any = {
+        name: profileNameBuffer.trim()
+      };
       if (profileAvatarBuffer) updates.avatar = profileAvatarBuffer;
       if (profilePinBuffer) updates.pin = profilePinBuffer;
 
@@ -457,6 +464,7 @@ const App: React.FC = () => {
              <button 
                onClick={() => {
                  setProfileAvatarBuffer(currentUser.avatar || '');
+                 setProfileNameBuffer(currentUser.name);
                  setProfilePinBuffer('');
                  setProfileConfirmPinBuffer('');
                  setProfileError('');
@@ -976,6 +984,17 @@ const App: React.FC = () => {
           </div>
 
           <div className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Display Name</label>
+              <input 
+                type="text" 
+                placeholder="Your Name"
+                value={profileNameBuffer}
+                onChange={(e) => setProfileNameBuffer(e.target.value)}
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-sm font-bold"
+              />
+            </div>
+
             <div className="space-y-1">
               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Change PIN (Optional)</label>
               <input 
