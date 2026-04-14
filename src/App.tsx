@@ -34,6 +34,9 @@ const App: React.FC = () => {
   const [profileConfirmPinBuffer, setProfileConfirmPinBuffer] = useState('');
   const [profileError, setProfileError] = useState('');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [confirmingBanId, setConfirmingBanId] = useState<string | null>(null);
+  const [confirmingDeleteFriendId, setConfirmingDeleteFriendId] = useState<string | null>(null);
+  const [confirmingDeleteExpenseId, setConfirmingDeleteExpenseId] = useState<string | null>(null);
 
   const [carouselImages, setCarouselImages] = useState<string[]>([]);
   const [carouselInitialIndex, setCarouselInitialIndex] = useState(0);
@@ -45,7 +48,7 @@ const App: React.FC = () => {
     if (savedUser) {
       try {
         const user = JSON.parse(savedUser);
-        if (user.name.toLowerCase() === 'eunice') {
+        if (user.role === 'admin' || user.name.toLowerCase() === 'eunice') {
           user.role = 'admin';
         }
         setCurrentUser(user);
@@ -73,10 +76,23 @@ const App: React.FC = () => {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    if (currentUser && friends.length > 0) {
+      const me = friends.find(f => f.id === currentUser.id);
+      if (me?.is_banned) {
+        handleLogout();
+        alert("Your account has been banned.");
+      }
+    }
+  }, [friends, currentUser]);
+
   const handleLogin = (user: Friend) => {
     const updatedUser = { ...user };
-    if (user.name.toLowerCase() === 'eunice') {
+    // Ensure role from DB is respected, fallback to admin check for 'eunice'
+    if (user.role === 'admin' || user.name.toLowerCase() === 'eunice') {
       updatedUser.role = 'admin';
+    } else {
+      updatedUser.role = 'user';
     }
     setCurrentUser(updatedUser);
     localStorage.setItem('sinigeng_user', JSON.stringify(updatedUser));
@@ -222,6 +238,23 @@ const App: React.FC = () => {
     }
   };
 
+  const toggleBan = async (id: string, currentStatus: boolean) => {
+    if (!currentUser || currentUser.role !== 'admin') return;
+    const friend = friends.find(f => f.id === id);
+    if (friend?.role === 'admin') return;
+    
+    setIsSyncing(true);
+    try {
+      await db.updateFriend(id, { is_banned: !currentStatus });
+      setFriends(friends.map(f => f.id === id ? { ...f, is_banned: !currentStatus } : f));
+      setConfirmingBanId(null);
+    } catch (err) {
+      console.error("Error updating ban status:", err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const handleUpdatePin = async (id: string, pin: string) => {
     await db.updateFriend(id, { pin });
     setFriends(friends.map(f => f.id === id ? { ...f, pin } : f));
@@ -230,17 +263,16 @@ const App: React.FC = () => {
   const deleteFriend = async (id: string) => {
     const hasActiveExpenses = expenses.some(e => e.payerId === id || e.splits.some(s => s.friendId === id && s.amount > 0));
     if (hasActiveExpenses) {
-      alert("Cannot delete friend with existing expenses.");
       return;
     }
-    if (!window.confirm("Remove this friend?")) return;
     
     setIsSyncing(true);
     try {
       await db.deleteFriend(id);
       setFriends(friends.filter(f => f.id !== id));
+      setConfirmingDeleteFriendId(null);
     } catch (err) {
-      alert("Error deleting friend.");
+      console.error("Error deleting friend:", err);
     } finally {
       setIsSyncing(false);
     }
@@ -394,16 +426,15 @@ const App: React.FC = () => {
   };
 
   const deleteExpense = async (id: string) => {
-    if (window.confirm("Delete this expense?")) {
-      setIsSyncing(true);
-      try {
-        await db.deleteExpense(id);
-        setExpenses(expenses.filter(e => e.id !== id));
-      } catch (err) {
-        alert("Error deleting.");
-      } finally {
-        setIsSyncing(false);
-      }
+    setIsSyncing(true);
+    try {
+      await db.deleteExpense(id);
+      setExpenses(expenses.filter(e => e.id !== id));
+      setConfirmingDeleteExpenseId(null);
+    } catch (err) {
+      console.error("Error deleting expense:", err);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -677,7 +708,24 @@ const App: React.FC = () => {
                             </div>
                             <div className="flex flex-col space-y-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                               <button onClick={(e) => { e.stopPropagation(); setEditingExpense(exp); setIsExpenseModalOpen(true); }} className="p-1.5 bg-blue-50 text-blue-600 rounded-lg"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></button>
-                              <button onClick={(e) => { e.stopPropagation(); deleteExpense(exp.id); }} className="p-1.5 bg-rose-50 text-rose-600 rounded-lg"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                              {confirmingDeleteExpenseId === exp.id ? (
+                                <div className="flex flex-col space-y-1 animate-in fade-in zoom-in duration-200">
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); deleteExpense(exp.id); }}
+                                    className="p-1.5 bg-rose-600 text-white rounded-lg text-[8px] font-bold"
+                                  >
+                                    Confirm
+                                  </button>
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); setConfirmingDeleteExpenseId(null); }}
+                                    className="p-1.5 bg-gray-200 text-gray-600 rounded-lg"
+                                  >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                  </button>
+                                </div>
+                              ) : (
+                                <button onClick={(e) => { e.stopPropagation(); setConfirmingDeleteExpenseId(exp.id); }} className="p-1.5 bg-rose-50 text-rose-600 rounded-lg"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                              )}
                             </div>
                           </div>
                       </div>
@@ -918,6 +966,38 @@ const App: React.FC = () => {
                   <>
                     <span className="font-bold text-gray-800">{f.name}</span>
                     <div className="flex space-x-1">
+                      {currentUser?.role === 'admin' && f.role !== 'admin' && (
+                        <div className="relative">
+                          {confirmingBanId === f.id ? (
+                            <div className="flex items-center space-x-1 animate-in fade-in zoom-in duration-200">
+                              <button 
+                                onClick={() => toggleBan(f.id, !!f.is_banned)}
+                                className="px-2 py-1 bg-rose-600 text-white text-[10px] font-bold rounded-lg hover:bg-rose-700"
+                              >
+                                Confirm {f.is_banned ? 'Unban' : 'Ban'}
+                              </button>
+                              <button 
+                                onClick={() => setConfirmingBanId(null)}
+                                className="p-1 text-gray-400 hover:bg-gray-200 rounded-lg"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                              </button>
+                            </div>
+                          ) : (
+                            <button 
+                              onClick={() => setConfirmingBanId(f.id)} 
+                              className={`p-2 rounded-lg ${f.is_banned ? 'text-emerald-600 hover:bg-emerald-100' : 'text-rose-600 hover:bg-rose-100'}`}
+                              title={f.is_banned ? "Unban user" : "Ban user"}
+                            >
+                              {f.is_banned ? (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                              ) : (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      )}
                       <button 
                         onClick={() => {
                           setEditingFriendId(f.id);
@@ -942,13 +1022,37 @@ const App: React.FC = () => {
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
                         </button>
                       )}
-                      <button 
-                        onClick={() => deleteFriend(f.id)} 
-                        className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg"
-                        title="Delete friend"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                      </button>
+                      {confirmingDeleteFriendId === f.id ? (
+                        <div className="flex items-center space-x-1 animate-in fade-in zoom-in duration-200">
+                          <button 
+                            onClick={() => deleteFriend(f.id)}
+                            className="px-2 py-1 bg-rose-600 text-white text-[10px] font-bold rounded-lg hover:bg-rose-700"
+                          >
+                            Confirm Delete
+                          </button>
+                          <button 
+                            onClick={() => setConfirmingDeleteFriendId(null)}
+                            className="p-1 text-gray-400 hover:bg-gray-200 rounded-lg"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                          </button>
+                        </div>
+                      ) : (
+                        <button 
+                          onClick={() => {
+                            const hasActiveExpenses = expenses.some(e => e.payerId === f.id || e.splits.some(s => s.friendId === f.id && s.amount > 0));
+                            if (hasActiveExpenses) {
+                              alert("Cannot delete friend with existing expenses.");
+                              return;
+                            }
+                            setConfirmingDeleteFriendId(f.id);
+                          }} 
+                          className="p-2 text-rose-600 hover:bg-rose-100 rounded-lg"
+                          title="Delete friend"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        </button>
+                      )}
                     </div>
                   </>
                 )}

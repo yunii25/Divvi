@@ -37,6 +37,13 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
   const handleLogin = (pinToUse?: string) => {
     const currentPin = pinToUse !== undefined ? pinToUse : pin;
     if (!selectedFriend) return;
+
+    if (selectedFriend.is_banned) {
+      setError('This account has been banned.');
+      setSelectedFriend(null);
+      setPin('');
+      return;
+    }
     
     // If friend has no PIN, they MUST set one first
     if (!selectedFriend.pin) {
@@ -103,8 +110,18 @@ const Login: React.FC<LoginProps> = ({ friends, onLogin, onUpdatePin }) => {
             {friends.map((friend) => (
               <button
                 key={friend.id}
-                onClick={() => setSelectedFriend(friend)}
-                className="flex flex-col items-center p-4 rounded-2xl border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/50 transition-all group"
+                onClick={() => {
+                  if (friend.is_banned) {
+                    setError('This account has been banned.');
+                    return;
+                  }
+                  setSelectedFriend(friend);
+                }}
+                className={`flex flex-col items-center p-4 rounded-2xl border transition-all group relative ${
+                  friend.is_banned 
+                    ? 'border-slate-100 bg-slate-50 opacity-60 cursor-not-allowed' 
+                    : 'border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/50'
+                }`}
               >
                 <div className="w-16 h-16 rounded-full flex items-center justify-center mb-3 group-hover:scale-105 transition-all overflow-hidden border-2 border-transparent group-hover:border-indigo-200 shadow-sm">
                   {friend.avatar ? (

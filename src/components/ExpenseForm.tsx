@@ -11,7 +11,7 @@ interface ExpenseFormProps {
 const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, onCancel }) => {
   const [description, setDescription] = useState(expense?.description || '');
   const [amount, setAmount] = useState(expense?.amount?.toString() || '');
-  const [payerId, setPayerId] = useState(expense?.payerId || (friends[0]?.id || ''));
+  const [payerId, setPayerId] = useState(expense?.payerId || (friends.find(f => !f.is_banned)?.id || friends[0]?.id || ''));
   const [splitType, setSplitType] = useState<'equal' | 'custom'>(expense?.splitType || 'equal');
   const [status, setStatus] = useState<'pending' | 'settled'>(expense?.status || 'pending');
   const [date, setDate] = useState(expense?.date ? new Date(expense.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
@@ -36,7 +36,7 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
       });
       setCustomSplits(splitsObj);
     } else {
-      setSelectedFriendIds(friends.map(f => f.id));
+      setSelectedFriendIds(friends.filter(f => !f.is_banned).map(f => f.id));
       setPaidFriendIds([]); 
       const defaultSplits: Record<string, string> = {};
       friends.forEach(f => {
@@ -161,7 +161,7 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
             onChange={e => setPayerId(e.target.value)}
             className="block w-full rounded-xl border-gray-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm p-2.5 border bg-white text-gray-900"
           >
-            {friends.map(f => (
+            {friends.filter(f => !f.is_banned || f.id === expense?.payerId).map(f => (
               <option key={f.id} value={f.id} className="text-gray-900">{f.name}</option>
             ))}
           </select>
@@ -196,7 +196,7 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ friends, expense, onSubmit, o
       <div>
         <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Split Details</label>
         <div className="space-y-1.5 border border-gray-100/50 rounded-2xl p-3 bg-gray-50/50">
-          {friends.map(f => (
+          {friends.filter(f => !f.is_banned || (expense?.splits?.some(s => s.friendId === f.id && s.amount > 0))).map(f => (
             <div key={f.id} className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <input 

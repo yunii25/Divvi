@@ -5,6 +5,7 @@ export interface Friend {
   avatar?: string;
   role?: 'admin' | 'user';
   pin?: string;
+  is_banned?: boolean;
 }
 
 export interface ExpenseSplit {
