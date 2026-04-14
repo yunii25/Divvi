@@ -6,6 +6,9 @@ export interface Friend {
   role?: 'admin' | 'user';
   pin?: string;
   is_banned?: boolean;
+  last_activity?: string;
+  last_login?: string;
+  last_ip?: string;
 }
 
 export interface ExpenseSplit {
@@ -52,4 +55,15 @@ export interface Settlement {
   fromId: string;
   toId: string;
   amount: number;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  type: 'nudge' | 'new_expense' | 'payment_received';
+  fromId: string;
+  expenseId?: string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
 }

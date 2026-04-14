@@ -1,6 +1,7 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { Friend, Expense, Balance, Settlement } from './types';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Friend, Expense, Balance, Settlement, Notification } from './types';
 import { calculateBalances, calculateSettlements } from './utils/calculations';
 import { db } from './services/supabaseService';
 import ExpenseForm from './components/ExpenseForm';
@@ -42,18 +43,37 @@ const App: React.FC = () => {
   const [carouselInitialIndex, setCarouselInitialIndex] = useState(0);
   const [isCarouselOpen, setIsCarouselOpen] = useState(false);
 
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isNudgingId, setIsNudgingId] = useState<string | null>(null);
+  const [nudgedSuccessId, setNudgedSuccessId] = useState<string | null>(null);
+  const notificationRef = useRef<HTMLDivElement>(null);
+
   // Load initial data from Supabase
   useEffect(() => {
-    const savedUser = localStorage.getItem('sinigeng_user');
-    if (savedUser) {
-      try {
-        const user = JSON.parse(savedUser);
-        if (user.role === 'admin' || user.name.toLowerCase() === 'eunice') {
-          user.role = 'admin';
+    const savedUser = sessionStorage.getItem('sinigeng_user');
+    const lastInteraction = sessionStorage.getItem('sinigeng_last_interaction');
+    
+    if (savedUser && lastInteraction) {
+      const now = Date.now();
+      const lastTime = parseInt(lastInteraction, 10);
+      const thirtyMinutes = 30 * 60 * 1000;
+
+      if (now - lastTime > thirtyMinutes) {
+        sessionStorage.removeItem('sinigeng_user');
+        sessionStorage.removeItem('sinigeng_last_interaction');
+        setCurrentUser(null);
+      } else {
+        try {
+          const user = JSON.parse(savedUser);
+          if (user.role === 'admin' || user.name.toLowerCase() === 'eunice') {
+            user.role = 'admin';
+          }
+          setCurrentUser(user);
+          sessionStorage.setItem('sinigeng_last_interaction', now.toString());
+        } catch (e) {
+          sessionStorage.removeItem('sinigeng_user');
         }
-        setCurrentUser(user);
-      } catch (e) {
-        localStorage.removeItem('sinigeng_user');
       }
     }
 
@@ -65,6 +85,12 @@ const App: React.FC = () => {
         ]);
         setFriends(loadedFriends);
         setExpenses(loadedExpenses);
+        
+        if (currentUser) {
+          const loadedNotifications = await db.getNotifications(currentUser.id);
+          setNotifications(loadedNotifications);
+        }
+
         setHasError(null);
       } catch (err: any) {
         console.error("Failed to load data from Supabase:", err);
@@ -74,6 +100,75 @@ const App: React.FC = () => {
       }
     };
     fetchData();
+  }, []);
+
+  // Track interactions to reset session timeout
+  useEffect(() => {
+    const handleInteraction = () => {
+      if (currentUser) {
+        sessionStorage.setItem('sinigeng_last_interaction', Date.now().toString());
+      }
+    };
+
+    window.addEventListener('mousedown', handleInteraction);
+    window.addEventListener('keydown', handleInteraction);
+    window.addEventListener('touchstart', handleInteraction);
+
+    return () => {
+      window.removeEventListener('mousedown', handleInteraction);
+      window.removeEventListener('keydown', handleInteraction);
+      window.removeEventListener('touchstart', handleInteraction);
+    };
+  }, [currentUser]);
+
+  // Periodic session timeout check
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const interval = setInterval(() => {
+      const lastInteraction = sessionStorage.getItem('sinigeng_last_interaction');
+      if (lastInteraction) {
+        const now = Date.now();
+        const lastTime = parseInt(lastInteraction, 10);
+        const thirtyMinutes = 30 * 60 * 1000;
+
+        if (now - lastTime > thirtyMinutes) {
+          handleLogout();
+          alert("Session expired due to inactivity.");
+        }
+      }
+    }, 60000); // Check every minute
+
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
+  // Periodic notification fetch
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const fetchNewNotifications = async () => {
+      try {
+        const loadedNotifications = await db.getNotifications(currentUser.id);
+        setNotifications(loadedNotifications);
+      } catch (err) {
+        console.error("Failed to fetch notifications:", err);
+      }
+    };
+
+    const interval = setInterval(fetchNewNotifications, 30000); // Check every 30 seconds
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
+  // Close notifications on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
+        setIsNotificationsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   useEffect(() => {
@@ -95,12 +190,93 @@ const App: React.FC = () => {
       updatedUser.role = 'user';
     }
     setCurrentUser(updatedUser);
-    localStorage.setItem('sinigeng_user', JSON.stringify(updatedUser));
+    sessionStorage.setItem('sinigeng_user', JSON.stringify(updatedUser));
+    sessionStorage.setItem('sinigeng_last_interaction', Date.now().toString());
+    
+    // Update activity, login time and IP in background
+    updateUserActivity(user.id, true);
+  };
+
+  const updateUserActivity = async (userId: string, isLogin: boolean = false) => {
+    try {
+      let ip = 'Unknown';
+      try {
+        const response = await fetch('https://api.ipify.org?format=json');
+        const data = await response.json();
+        ip = data.ip;
+      } catch (e) {
+        console.error("Failed to fetch IP:", e);
+      }
+
+      const now = new Date().toISOString();
+      const updates: any = { 
+        last_activity: now,
+        last_ip: ip 
+      };
+      
+      if (isLogin) {
+        updates.last_login = now;
+      }
+
+      await db.updateFriend(userId, updates);
+      
+      setFriends(prev => prev.map(f => f.id === userId ? { ...f, ...updates } : f));
+      
+      // Update session interaction time
+      if (currentUser?.id === userId) {
+        sessionStorage.setItem('sinigeng_last_interaction', Date.now().toString());
+      }
+    } catch (err) {
+      console.error("Error updating activity:", err);
+    }
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
-    localStorage.removeItem('sinigeng_user');
+    setNotifications([]);
+    sessionStorage.removeItem('sinigeng_user');
+    sessionStorage.removeItem('sinigeng_last_interaction');
+  };
+
+  const handleNudge = async (targetId: string) => {
+    if (!currentUser) return;
+    setIsNudgingId(targetId);
+    try {
+      await db.addNotification({
+        userId: targetId,
+        fromId: currentUser.id,
+        type: 'nudge',
+        message: `${currentUser.name} nudged you! Time to settle your dues.`,
+        isRead: false
+      });
+      
+      // Success feedback
+      setNudgedSuccessId(targetId);
+      setTimeout(() => setNudgedSuccessId(null), 3000);
+    } catch (err) {
+      console.error("Failed to nudge:", err);
+    } finally {
+      setIsNudgingId(null);
+    }
+  };
+
+  const markAllAsRead = async () => {
+    if (!currentUser) return;
+    try {
+      await db.markAllNotificationsAsRead(currentUser.id);
+      setNotifications(notifications.map(n => ({ ...n, isRead: true })));
+    } catch (err) {
+      console.error("Failed to mark all as read:", err);
+    }
+  };
+
+  const markAsRead = async (id: string) => {
+    try {
+      await db.markNotificationAsRead(id);
+      setNotifications(notifications.map(n => n.id === id ? { ...n, isRead: true } : n));
+    } catch (err) {
+      console.error("Failed to mark as read:", err);
+    }
   };
 
   const handleProfileUpdate = async () => {
@@ -330,9 +506,23 @@ const App: React.FC = () => {
           history: initialHistory
         } as Omit<Expense, 'id'>);
         setExpenses([newExp, ...expenses]);
+
+        // Notify participants
+        const participants = expenseData.splits?.filter(s => s.friendId !== currentUser.id && s.amount > 0) || [];
+        for (const p of participants) {
+          await db.addNotification({
+            userId: p.friendId,
+            fromId: currentUser.id,
+            type: 'new_expense',
+            expenseId: newExp.id,
+            message: `${currentUser.name} added a new bill: "${expenseData.description}". Your share is ₱${p.amount.toFixed(2)}.`,
+            isRead: false
+          });
+        }
       }
       setIsExpenseModalOpen(false);
       setEditingExpense(undefined);
+      updateUserActivity(currentUser.id);
     } catch (err) {
       alert("Error saving expense.");
     } finally {
@@ -485,6 +675,57 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-2">
+           <div ref={notificationRef} className="relative">
+             <button 
+               onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+               className="p-2 text-gray-600 hover:bg-gray-100 rounded-full transition-colors relative"
+             >
+               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+               {notifications.filter(n => !n.isRead).length > 0 && (
+                 <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white">
+                   {notifications.filter(n => !n.isRead).length}
+                 </span>
+               )}
+             </button>
+
+             {isNotificationsOpen && (
+               <div className="fixed inset-x-4 top-16 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                 <div className="p-4 border-b border-gray-50 flex items-center justify-between bg-gray-50/50">
+                   <h3 className="text-sm font-bold text-gray-900">Notifications</h3>
+                   {notifications.some(n => !n.isRead) && (
+                     <button onClick={markAllAsRead} className="text-[10px] font-bold text-indigo-600 hover:text-indigo-700 uppercase tracking-widest">Mark all read</button>
+                   )}
+                 </div>
+                 <div className="max-h-[400px] overflow-y-auto">
+                   {notifications.length === 0 ? (
+                     <div className="p-8 text-center text-gray-400 text-sm">No notifications yet.</div>
+                   ) : (
+                     <div className="divide-y divide-gray-50">
+                       {notifications.map(n => (
+                         <div key={n.id} onClick={() => markAsRead(n.id)} className={`p-4 hover:bg-gray-50 transition-colors cursor-pointer relative ${!n.isRead ? 'bg-indigo-50/30' : ''}`}>
+                           {!n.isRead && <div className="absolute left-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-indigo-600 rounded-full"></div>}
+                           <div className="flex items-start space-x-3">
+                             <div className="w-8 h-8 rounded-full bg-white border border-gray-100 flex items-center justify-center text-sm shadow-sm shrink-0 overflow-hidden">
+                               {friends.find(f => f.id === n.fromId)?.avatar ? (
+                                 <img src={friends.find(f => f.id === n.fromId)?.avatar} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                               ) : (
+                                 <span>{n.type === 'nudge' ? '👉' : '💸'}</span>
+                               )}
+                             </div>
+                             <div className="flex-1 min-w-0">
+                               <p className="text-xs text-gray-800 leading-relaxed">{n.message}</p>
+                               <p className="text-[9px] text-gray-400 mt-1 uppercase font-bold">{new Date(n.createdAt).toLocaleString()}</p>
+                             </div>
+                           </div>
+                         </div>
+                       ))}
+                     </div>
+                   )}
+                 </div>
+               </div>
+             )}
+           </div>
+
            {currentUser?.role === 'admin' && (
              <button onClick={() => setIsFriendModalOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-full transition-colors">
                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13.481 4.017a4 4 0 014.168 5.608" /></svg>
@@ -580,6 +821,48 @@ const App: React.FC = () => {
                             {netWithFriend >= 0 ? `Owes you ₱${netWithFriend.toFixed(2)}` : `You owe ₱${Math.abs(netWithFriend).toFixed(2)}`}
                           </p>
                         </div>
+                        {netWithFriend > 0 && (
+                          <div className="relative">
+                            <button 
+                              onClick={() => handleNudge(friend.id)}
+                              disabled={isNudgingId === friend.id || nudgedSuccessId === friend.id}
+                              className={`p-2 rounded-xl transition-all relative ${
+                                nudgedSuccessId === friend.id 
+                                  ? 'bg-emerald-500 text-white shadow-lg scale-110' 
+                                  : isNudgingId === friend.id 
+                                    ? 'bg-gray-100 text-gray-400' 
+                                    : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white shadow-sm'
+                              }`}
+                              title="Nudge them to pay"
+                            >
+                              {isNudgingId === friend.id ? (
+                                <div className="w-5 h-5 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" />
+                              ) : nudgedSuccessId === friend.id ? (
+                                <motion.div
+                                  initial={{ scale: 0 }}
+                                  animate={{ scale: 1 }}
+                                  className="w-5 h-5 flex items-center justify-center"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/></svg>
+                                </motion.div>
+                              ) : (
+                                <span className="text-lg">👉</span>
+                              )}
+                            </button>
+                            <AnimatePresence>
+                              {nudgedSuccessId === friend.id && (
+                                <motion.div
+                                  initial={{ opacity: 0, y: 10, scale: 0.5 }}
+                                  animate={{ opacity: 1, y: -40, scale: 1 }}
+                                  exit={{ opacity: 0, scale: 0.5 }}
+                                  className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap bg-emerald-600 text-white text-[10px] font-black px-2 py-1 rounded-full shadow-lg z-10"
+                                >
+                                  NUDGED!
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -636,8 +919,53 @@ const App: React.FC = () => {
                             <p className="text-[9px] font-bold text-gray-400 uppercase mt-1 truncate w-12">{toFriend?.name}</p>
                           </div>
                         </div>
-                        <div className="text-right pl-4 border-l border-gray-50">
+                        <div className="text-right pl-4 border-l border-gray-50 flex flex-col items-end justify-center space-y-1">
                           <p className={`text-lg font-black leading-tight ${isMePaying ? 'text-rose-600' : 'text-emerald-600'}`}>₱{s.amount.toFixed(2)}</p>
+                          {!isMePaying && (
+                            <div className="relative">
+                              <button 
+                                onClick={() => handleNudge(s.fromId)}
+                                disabled={isNudgingId === s.fromId || nudgedSuccessId === s.fromId}
+                                className={`text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1 transition-all ${
+                                  nudgedSuccessId === s.fromId 
+                                    ? 'text-emerald-600 scale-110' 
+                                    : isNudgingId === s.fromId 
+                                      ? 'text-gray-400' 
+                                      : 'text-indigo-600 hover:text-indigo-800'
+                                }`}
+                              >
+                                {isNudgingId === s.fromId ? (
+                                  <div className="w-3 h-3 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" />
+                                ) : nudgedSuccessId === s.fromId ? (
+                                  <motion.div
+                                    initial={{ scale: 0 }}
+                                    animate={{ scale: 1 }}
+                                    className="flex items-center space-x-1"
+                                  >
+                                    <span>Sent</span>
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/></svg>
+                                  </motion.div>
+                                ) : (
+                                  <>
+                                    <span>Nudge</span>
+                                    <span>👉</span>
+                                  </>
+                                )}
+                              </button>
+                              <AnimatePresence>
+                                {nudgedSuccessId === s.fromId && (
+                                  <motion.div
+                                    initial={{ opacity: 0, y: 5 }}
+                                    animate={{ opacity: 1, y: -20 }}
+                                    exit={{ opacity: 0 }}
+                                    className="absolute right-0 whitespace-nowrap text-[8px] font-black text-emerald-600"
+                                  >
+                                    POKED!
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -964,7 +1292,28 @@ const App: React.FC = () => {
                   </div>
                 ) : (
                   <>
-                    <span className="font-bold text-gray-800">{f.name}</span>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-gray-800">{f.name}</span>
+                      {currentUser?.role === 'admin' && (f.last_activity || f.last_login) && (
+                        <div className="flex flex-col space-y-0.5 mt-0.5">
+                          {f.last_login && (
+                            <span className="text-[8px] text-emerald-600 uppercase font-black">
+                              Login: {new Date(f.last_login).toLocaleString()}
+                            </span>
+                          )}
+                          {f.last_activity && (
+                            <span className="text-[8px] text-gray-400 uppercase font-black">
+                              Active: {new Date(f.last_activity).toLocaleString()}
+                            </span>
+                          )}
+                          {f.last_ip && (
+                            <span className="text-[8px] text-indigo-400 font-bold">
+                              IP: {f.last_ip}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     <div className="flex space-x-1">
                       {currentUser?.role === 'admin' && f.role !== 'admin' && (
                         <div className="relative">

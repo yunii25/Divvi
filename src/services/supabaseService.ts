@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { Friend, Expense, Notification } from '../types';
 
 // @ts-ignore
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
@@ -61,8 +62,58 @@ export const db = {
   async deleteExpense(id: string) {
     const { error } = await supabase.from('expenses').delete().eq('id', id);
     if (error) throw error;
+  },
+  async getNotifications(userId: string) {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    return data.map(mapNotificationFromDB).filter((n): n is Notification => n !== null);
+  },
+  async addNotification(notification: any) {
+    const dbData = mapNotificationToDB(notification);
+    const { data, error } = await supabase.from('notifications').insert([dbData]).select().single();
+    if (error) throw error;
+    return mapNotificationFromDB(data);
+  },
+  async markNotificationAsRead(id: string) {
+    const { error } = await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+    if (error) throw error;
+  },
+  async markAllNotificationsAsRead(userId: string) {
+    const { error } = await supabase.from('notifications').update({ is_read: true }).eq('user_id', userId);
+    if (error) throw error;
   }
 };
+
+function mapNotificationToDB(n: any) {
+  return {
+    user_id: n.userId,
+    from_id: n.fromId,
+    type: n.type,
+    expense_id: n.expenseId,
+    message: n.message,
+    is_read: n.isRead || false,
+    created_at: n.createdAt || new Date().toISOString()
+  };
+}
+
+function mapNotificationFromDB(dbN: any): Notification | null {
+  if (!dbN) return null;
+  return {
+    id: dbN.id,
+    userId: dbN.user_id,
+    fromId: dbN.from_id,
+    type: dbN.type,
+    expenseId: dbN.expense_id,
+    message: dbN.message,
+    isRead: dbN.is_read,
+    createdAt: dbN.created_at
+  };
+}
 
 function mapExpenseToDB(expense: any) {
   const mapped: any = { ...expense };
